@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+test-sessions/
+*.log
+.DS_Store
+*.tsbuildinfo
+.env
+.env.local
+.evs.statusline.stdin.jsonl
+.artifacts
+.shinra
+CLAUDE.md
+AGENTS.md
+.claude
