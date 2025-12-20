@@ -17,6 +17,8 @@ import { registerInfoCommand } from "./commands/info.js";
 import { registerLogCommand } from "./commands/log.js";
 import { registerMigrateCommand } from "./commands/migrate.js";
 import { registerOpenCommand } from "./commands/open.js";
+import { registerPinCommand } from "./commands/pin.js";
+import { registerPinsCommand } from "./commands/pins.js";
 import { registerReloadCommand } from "./commands/reload.js";
 import { registerRemoveCommand } from "./commands/remove.js";
 import { registerSessionCommand } from "./commands/session.js";
@@ -78,6 +80,8 @@ registerReloadCommand(program);
 registerClaudeSupervisorCommand(program);
 registerCleanupCommand(program);
 registerForkCommand(program);
+registerPinCommand(program);
+registerPinsCommand(program);
 
 program.parseAsync(process.argv).catch((err: unknown) => {
   const message = err instanceof Error ? (err.stack ?? err.message) : String(err);
