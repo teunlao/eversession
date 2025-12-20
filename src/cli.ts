@@ -10,6 +10,7 @@ import { registerDetectCommand } from "./commands/detect.js";
 import { registerDiffCommand } from "./commands/diff.js";
 import { registerExportCommand } from "./commands/export.js";
 import { registerFixCommand } from "./commands/fix.js";
+import { registerForkCommand } from "./commands/fork.js";
 import { registerHookEnvCommand } from "./commands/hook-env.js";
 import { registerHooksCommand } from "./commands/hooks.js";
 import { registerInfoCommand } from "./commands/info.js";
@@ -76,6 +77,7 @@ registerSessionStartCommand(program);
 registerReloadCommand(program);
 registerClaudeSupervisorCommand(program);
 registerCleanupCommand(program);
+registerForkCommand(program);
 
 program.parseAsync(process.argv).catch((err: unknown) => {
   const message = err instanceof Error ? (err.stack ?? err.message) : String(err);
