@@ -1,10 +1,8 @@
-import type { Command } from "commander";
-
 import { readdir, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-
+import type { Command } from "commander";
+import { type DiffLine, type DiffOp, patienceDiff, summarizeDiff } from "../core/diff.js";
 import { loadJsonlFile } from "../core/jsonl.js";
-import { patienceDiff, summarizeDiff, type DiffLine, type DiffOp } from "../core/diff.js";
 import { getClaudeCentralBackupsDir, resolveClaudeCentralBackup } from "../integrations/claude/diff.js";
 import { resolveSessionPathForCli } from "./session-ref.js";
 
@@ -17,7 +15,10 @@ async function resolveAgainst(sessionPath: string, against: string | undefined):
   if (!siblingBackup) return centralBackup;
   if (!centralBackup) return siblingBackup;
 
-  const [siblingMtime, centralMtime] = await Promise.all([tryStatMtimeMs(siblingBackup), tryStatMtimeMs(centralBackup)]);
+  const [siblingMtime, centralMtime] = await Promise.all([
+    tryStatMtimeMs(siblingBackup),
+    tryStatMtimeMs(centralBackup),
+  ]);
   if (siblingMtime !== undefined && centralMtime !== undefined) {
     return siblingMtime >= centralMtime ? siblingBackup : centralBackup;
   }
@@ -82,7 +83,10 @@ export function registerDiffCommand(program: Command): void {
   program
     .command("diff")
     .argument("[id]", "session path (*.jsonl) or Claude session UUID (defaults to active session when omitted)")
-    .option("--against <path>", "path to compare against (defaults to latest backup next to session or in EverSession storage)")
+    .option(
+      "--against <path>",
+      "path to compare against (defaults to latest backup next to session or in EverSession storage)",
+    )
     .option("--limit <n>", "limit the number of shown changes (default: 50)", "50")
     .option("--json", "output JSON report")
     .action(async (id: string | undefined, opts: { against?: string; limit: string; json?: boolean }) => {

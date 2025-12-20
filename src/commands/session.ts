@@ -10,7 +10,11 @@ export function registerSessionCommand(program: Command): void {
     .option("--cwd <path>", "target working directory (default: process.cwd())")
     .option("--session-id <id>", "exact session id / conversation id to resolve (fast, most precise)")
     .option("--match <text>", "search candidate sessions by tail content (expensive)")
-    .option("--fallback <on|off>", "Codex: allow global fallback outside this project (default: on). Claude: always off.", "on")
+    .option(
+      "--fallback <on|off>",
+      "Codex: allow global fallback outside this project (default: on). Claude: always off.",
+      "on",
+    )
     .option("--lookback-days <n>", "Codex: how many days back to scan (default: 14)", "14")
     .option("--max-candidates <n>", "limit number of candidate files to inspect (default: 200)", "200")
     .option("--tail-lines <n>", "how many last JSONL lines to inspect (default: 500)", "500")

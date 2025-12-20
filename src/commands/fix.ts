@@ -1,12 +1,11 @@
 import type { Command } from "commander";
-
-import { detectSession } from "../agents/detect.js";
 import type { AgentId } from "../agents/agent-id.js";
-import { getAdapterForDetect, type AgentAdapter } from "../agents/registry.js";
-import { stringifyJsonl } from "../core/jsonl.js";
+import { detectSession } from "../agents/detect.js";
+import { type AgentAdapter, getAdapterForDetect } from "../agents/registry.js";
+import type { ChangeSet } from "../core/changes.js";
 import { createBackup, writeFileAtomic } from "../core/fs.js";
 import { countBySeverity, type Issue } from "../core/issues.js";
-import type { ChangeSet } from "../core/changes.js";
+import { stringifyJsonl } from "../core/jsonl.js";
 import { compareErrorCounts, hasErrors, printChangesHuman, printIssuesHuman } from "./common.js";
 import { resolveSessionPathForCli } from "./session-ref.js";
 
@@ -14,10 +13,7 @@ export function registerFixCommand(program: Command): void {
   program
     .command("fix")
     .argument("[id]", "session path (*.jsonl) or Claude session UUID (defaults to active session when omitted)")
-    .option(
-      "--insert-aborted-outputs",
-      "insert synthetic aborted outputs for missing tool calls (Codex only; unsafe)",
-    )
+    .option("--insert-aborted-outputs", "insert synthetic aborted outputs for missing tool calls (Codex only; unsafe)")
     .option("--dry-run", "show changes but do not write")
     .option("--no-backup", "do not create a backup")
     .option("--force", "write even if post-validation is worse")
@@ -94,10 +90,7 @@ export function registerFixCommand(program: Command): void {
           });
           if (!fixed) return { kind: "error", issues: parsed.issues };
           const postParsed = adapter.parseValues(sessionPath, fixed.nextValues);
-          const postIssues = [
-            ...postParsed.issues,
-            ...(postParsed.ok ? adapter.validate(postParsed.session) : []),
-          ];
+          const postIssues = [...postParsed.issues, ...(postParsed.ok ? adapter.validate(postParsed.session) : [])];
           return {
             kind: "ok",
             agent: adapter.id,

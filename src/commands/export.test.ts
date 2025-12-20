@@ -16,14 +16,14 @@ async function writeTempSession(text: string): Promise<string> {
 async function runExport(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const stdoutChunks: string[] = [];
   const stderrChunks: string[] = [];
-  const spyOut = vi.spyOn(process.stdout, "write").mockImplementation(((chunk: any) => {
-    stdoutChunks.push(typeof chunk === "string" ? chunk : String(chunk));
+  const spyOut = vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+    stdoutChunks.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
     return true;
-  }) as any);
-  const spyErr = vi.spyOn(process.stderr, "write").mockImplementation(((chunk: any) => {
-    stderrChunks.push(typeof chunk === "string" ? chunk : String(chunk));
+  });
+  const spyErr = vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+    stderrChunks.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
     return true;
-  }) as any);
+  });
 
   const prevExitCode = process.exitCode;
   process.exitCode = undefined;
@@ -33,12 +33,13 @@ async function runExport(args: string[]): Promise<{ stdout: string; stderr: stri
     program.exitOverride();
     registerExportCommand(program);
     await program.parseAsync(["node", "evs", ...args]);
+
+    const exitCode = process.exitCode ?? 0;
+    return { stdout: stdoutChunks.join(""), stderr: stderrChunks.join(""), exitCode };
   } finally {
-    const code = process.exitCode ?? 0;
     process.exitCode = prevExitCode;
     spyOut.mockRestore();
     spyErr.mockRestore();
-    return { stdout: stdoutChunks.join(""), stderr: stderrChunks.join(""), exitCode: code };
   }
 }
 
@@ -62,7 +63,10 @@ describe("cli export", () => {
 
     const res = await runExport(["export", path, "--format", "json"]);
     expect(res.exitCode).toBe(0);
-    const obj = JSON.parse(res.stdout) as { agent: string; items: Array<{ kind: string; role: string; text: string; line: number }> };
+    const obj = JSON.parse(res.stdout) as {
+      agent: string;
+      items: Array<{ kind: string; role: string; text: string; line: number }>;
+    };
     expect(obj.agent).toBe("claude");
     expect(obj.items).toEqual([{ kind: "message", role: "assistant", text: "hello from string", line: 1 }]);
   });
@@ -81,7 +85,11 @@ describe("cli export", () => {
 
     const res = await runExport(["export", path, "--format", "json"]);
     expect(res.exitCode).toBe(0);
-    const obj = JSON.parse(res.stdout) as { agent: string; format: string; items: Array<{ kind: string; role: string; text: string; line: number }> };
+    const obj = JSON.parse(res.stdout) as {
+      agent: string;
+      format: string;
+      items: Array<{ kind: string; role: string; text: string; line: number }>;
+    };
     expect(obj.agent).toBe("codex");
     expect(obj.format).toBe("wrapped");
     expect(obj.items).toEqual([{ kind: "message", role: "assistant", text: "hello", line: 2 }]);

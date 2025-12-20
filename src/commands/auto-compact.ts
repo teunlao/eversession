@@ -1,22 +1,23 @@
-import type { Command } from "commander";
-
 import { spawn } from "node:child_process";
-
+import type { Command } from "commander";
+import { parseDurationMs } from "../core/duration.js";
+import { deriveSessionIdFromPath } from "../core/paths.js";
+import { parseTokenThreshold } from "../core/threshold.js";
+import { resolveClaudeSessionPathFromInputs } from "../integrations/claude/active-session.js";
 import {
-  isClaudeAutoCompactModel,
-  runClaudeAutoCompactOnce,
   type AutoCompactAmountMode,
   type AutoCompactRunOptions,
+  isClaudeAutoCompactModel,
+  runClaudeAutoCompactOnce,
 } from "../integrations/claude/auto-compact.js";
 import { resolveClaudeActiveCwd } from "../integrations/claude/context.js";
-import { resolveClaudeSessionPathFromInputs } from "../integrations/claude/active-session.js";
-
-import { parseTokenThreshold } from "../core/threshold.js";
-import { parseDurationMs } from "../core/duration.js";
+import {
+  appendSessionLog,
+  readSessionState,
+  updateSessionState,
+} from "../integrations/claude/eversession-session-storage.js";
 import { readClaudeHookInputIfAny } from "../integrations/claude/hook-input.js";
-import { deriveSessionIdFromPath } from "../core/paths.js";
 import { appendSupervisorControlCommand, readClaudeSupervisorEnv } from "../integrations/claude/supervisor-control.js";
-import { appendSessionLog, readSessionState, updateSessionState } from "../integrations/claude/eversession-session-storage.js";
 
 function spawnDetached(argv: string[]): void {
   const child = spawn(process.execPath, argv, { detached: true, stdio: "ignore" });
@@ -52,104 +53,105 @@ export function registerAutoCompactCommand(program: Command): void {
         busyTimeout: string;
         notify?: boolean;
       }) => {
-      const hook = await readClaudeHookInputIfAny(25);
-      const cwd = resolveClaudeActiveCwd(opts.cwd ?? hook?.cwd);
-      const thresholdTokens = parseTokenThreshold(opts.threshold);
-      const model = isClaudeAutoCompactModel(opts.model) ? opts.model : "haiku";
-      const busyTimeoutMs = parseDurationMs(opts.busyTimeout);
+        const hook = await readClaudeHookInputIfAny(25);
+        const cwd = resolveClaudeActiveCwd(opts.cwd ?? hook?.cwd);
+        const thresholdTokens = parseTokenThreshold(opts.threshold);
+        const model = isClaudeAutoCompactModel(opts.model) ? opts.model : "haiku";
+        const busyTimeoutMs = parseDurationMs(opts.busyTimeout);
 
-      const amountTokensRaw = opts.amountTokens?.trim();
-      const amountMessagesRaw = opts.amountMessages?.trim();
-      if (amountTokensRaw && amountMessagesRaw) {
-        process.stderr.write("[evs auto-compact] Use either --amount-messages or --amount-tokens (not both).\n");
-        process.exitCode = 2;
-        return;
-      }
-      if (amountTokensRaw && opts.keepLast && opts.keepLast.trim().length > 0) {
-        process.stderr.write("[evs auto-compact] --amount-tokens cannot be combined with --keep-last.\n");
-        process.exitCode = 2;
-        return;
-      }
+        const amountTokensRaw = opts.amountTokens?.trim();
+        const amountMessagesRaw = opts.amountMessages?.trim();
+        if (amountTokensRaw && amountMessagesRaw) {
+          process.stderr.write("[evs auto-compact] Use either --amount-messages or --amount-tokens (not both).\n");
+          process.exitCode = 2;
+          return;
+        }
+        if (amountTokensRaw && opts.keepLast && opts.keepLast.trim().length > 0) {
+          process.stderr.write("[evs auto-compact] --amount-tokens cannot be combined with --keep-last.\n");
+          process.exitCode = 2;
+          return;
+        }
 
-      const amountMode: AutoCompactAmountMode = amountTokensRaw ? "tokens" : "messages";
-      const amountRaw = amountTokensRaw ?? amountMessagesRaw ?? opts.amount;
+        const amountMode: AutoCompactAmountMode = amountTokensRaw ? "tokens" : "messages";
+        const amountRaw = amountTokensRaw ?? amountMessagesRaw ?? opts.amount;
 
-      const sessionPath = await resolveClaudeSessionPathFromInputs({
-        cwd,
-        ...(hook?.transcriptPath ? { hookPath: hook.transcriptPath } : {}),
-        ...(opts.session ? { explicitPath: opts.session } : {}),
-      });
-      if (!sessionPath) {
-        // No session to work with
-        process.exitCode = 1;
-        return;
-      }
+        const sessionPath = await resolveClaudeSessionPathFromInputs({
+          cwd,
+          ...(hook?.transcriptPath ? { hookPath: hook.transcriptPath } : {}),
+          ...(opts.session ? { explicitPath: opts.session } : {}),
+        });
+        if (!sessionPath) {
+          // No session to work with
+          process.exitCode = 1;
+          return;
+        }
 
-      const sessionId = deriveSessionIdFromPath(sessionPath);
-      const supervisor = readClaudeSupervisorEnv();
+        const sessionId = deriveSessionIdFromPath(sessionPath);
+        const supervisor = readClaudeSupervisorEnv();
 
-      // Check for pending reload from session state (set by previous compact)
-      if (supervisor && supervisor.reloadMode === "auto") {
-        const state = await readSessionState(sessionId);
-        if (state?.pendingReload) {
-          try {
-            await appendSupervisorControlCommand({
-              controlDir: supervisor.controlDir,
-              command: { ts: new Date().toISOString(), cmd: "reload", reason: "auto_deferred_until_next_stop" },
-            });
-            await updateSessionState(sessionId, { pendingReload: null });
-            await appendSessionLog(sessionId, {
-              event: "auto_reload",
-              sessionPath,
-              result: "requested",
-              mode: "auto",
-              armedTs: state.pendingReload.ts,
-              armedReason: state.pendingReload.reason,
-            });
-            return;
-          } catch {
-            // Best-effort: if we cannot request reload, keep the pending marker for the next hook.
+        // Check for pending reload from session state (set by previous compact)
+        if (supervisor && supervisor.reloadMode === "auto") {
+          const state = await readSessionState(sessionId);
+          if (state?.pendingReload) {
+            try {
+              await appendSupervisorControlCommand({
+                controlDir: supervisor.controlDir,
+                command: { ts: new Date().toISOString(), cmd: "reload", reason: "auto_deferred_until_next_stop" },
+              });
+              await updateSessionState(sessionId, { pendingReload: null });
+              await appendSessionLog(sessionId, {
+                event: "auto_reload",
+                sessionPath,
+                result: "requested",
+                mode: "auto",
+                armedTs: state.pendingReload.ts,
+                armedReason: state.pendingReload.reason,
+              });
+              return;
+            } catch {
+              // Best-effort: if we cannot request reload, keep the pending marker for the next hook.
+            }
           }
         }
-      }
 
-      await appendSessionLog(sessionId, {
-        event: "auto_compact_start",
-        sessionPath,
-        threshold: thresholdTokens,
-        amountMode,
-        amount: amountRaw,
-        keepLast: opts.keepLast ?? null,
-        model,
-        busyTimeoutMs,
-      });
+        await appendSessionLog(sessionId, {
+          event: "auto_compact_start",
+          sessionPath,
+          threshold: thresholdTokens,
+          amountMode,
+          amount: amountRaw,
+          keepLast: opts.keepLast ?? null,
+          model,
+          busyTimeoutMs,
+        });
 
-      process.stdout.write(`[evs] auto-compact started session=${sessionId}\n`);
+        process.stdout.write(`[evs] auto-compact started session=${sessionId}\n`);
 
-      const cliPath = process.argv[1];
-      if (!cliPath) throw new Error("[AutoCompact] Cannot determine CLI path to spawn background process.");
+        const cliPath = process.argv[1];
+        if (!cliPath) throw new Error("[AutoCompact] Cannot determine CLI path to spawn background process.");
 
-      const args = [
-        cliPath,
-        "auto-compact",
-        "run",
-        "--cwd",
-        cwd,
-        "--session",
-        sessionPath,
-        "--threshold",
-        String(thresholdTokens),
-        ...(amountMode === "tokens" ? ["--amount-tokens", amountRaw] : ["--amount", amountRaw]),
-        "--model",
-        model,
-        "--busy-timeout",
-        `${busyTimeoutMs}ms`,
-      ];
-      if (opts.keepLast) args.push("--keep-last", opts.keepLast);
-      if (opts.notify) args.push("--notify");
+        const args = [
+          cliPath,
+          "auto-compact",
+          "run",
+          "--cwd",
+          cwd,
+          "--session",
+          sessionPath,
+          "--threshold",
+          String(thresholdTokens),
+          ...(amountMode === "tokens" ? ["--amount-tokens", amountRaw] : ["--amount", amountRaw]),
+          "--model",
+          model,
+          "--busy-timeout",
+          `${busyTimeoutMs}ms`,
+        ];
+        if (opts.keepLast) args.push("--keep-last", opts.keepLast);
+        if (opts.notify) args.push("--notify");
 
-      spawnDetached(args);
-    });
+        spawnDetached(args);
+      },
+    );
 
   cmd
     .command("run")
@@ -177,47 +179,49 @@ export function registerAutoCompactCommand(program: Command): void {
         busyTimeout: string;
         notify?: boolean;
       }) => {
-      const hook = await readClaudeHookInputIfAny(25);
-      const cwd = resolveClaudeActiveCwd(opts.cwd ?? hook?.cwd);
-      const thresholdTokens = parseTokenThreshold(opts.threshold);
-      const model = isClaudeAutoCompactModel(opts.model) ? opts.model : "haiku";
-      const busyTimeoutMs = parseDurationMs(opts.busyTimeout);
+        const hook = await readClaudeHookInputIfAny(25);
+        const cwd = resolveClaudeActiveCwd(opts.cwd ?? hook?.cwd);
+        const thresholdTokens = parseTokenThreshold(opts.threshold);
+        const model = isClaudeAutoCompactModel(opts.model) ? opts.model : "haiku";
+        const busyTimeoutMs = parseDurationMs(opts.busyTimeout);
 
-      const amountTokensRaw = opts.amountTokens?.trim();
-      const amountMessagesRaw = opts.amountMessages?.trim();
-      if (amountTokensRaw && amountMessagesRaw) {
-        process.stderr.write("[evs auto-compact] Use either --amount-messages or --amount-tokens (not both).\n");
-        process.exitCode = 2;
-        return;
-      }
-      if (amountTokensRaw && opts.keepLast && opts.keepLast.trim().length > 0) {
-        process.stderr.write("[evs auto-compact] --amount-tokens cannot be combined with --keep-last.\n");
-        process.exitCode = 2;
-        return;
-      }
+        const amountTokensRaw = opts.amountTokens?.trim();
+        const amountMessagesRaw = opts.amountMessages?.trim();
+        if (amountTokensRaw && amountMessagesRaw) {
+          process.stderr.write("[evs auto-compact] Use either --amount-messages or --amount-tokens (not both).\n");
+          process.exitCode = 2;
+          return;
+        }
+        if (amountTokensRaw && opts.keepLast && opts.keepLast.trim().length > 0) {
+          process.stderr.write("[evs auto-compact] --amount-tokens cannot be combined with --keep-last.\n");
+          process.exitCode = 2;
+          return;
+        }
 
-      const amountMode: AutoCompactAmountMode = amountTokensRaw ? "tokens" : "messages";
-      const amountRaw = amountTokensRaw ?? amountMessagesRaw ?? opts.amount;
+        const amountMode: AutoCompactAmountMode = amountTokensRaw ? "tokens" : "messages";
+        const amountRaw = amountTokensRaw ?? amountMessagesRaw ?? opts.amount;
 
-      const params: AutoCompactRunOptions = {
-        cwd,
-        thresholdTokens,
-        amountMode,
-        amountRaw,
-        model,
-        busyTimeoutMs,
-      };
-      const sessionPath = await resolveClaudeSessionPathFromInputs({
-        cwd,
-        ...(hook?.transcriptPath ? { hookPath: hook.transcriptPath } : {}),
-        ...(opts.session ? { explicitPath: opts.session } : {}),
-      });
-      if (sessionPath) params.sessionPath = sessionPath;
-      if (opts.keepLast) params.keepLastRaw = opts.keepLast;
-      if (opts.notify) params.notify = true;
+        const params: AutoCompactRunOptions = {
+          cwd,
+          thresholdTokens,
+          amountMode,
+          amountRaw,
+          model,
+          busyTimeoutMs,
+        };
+        const sessionPath = await resolveClaudeSessionPathFromInputs({
+          cwd,
+          ...(hook?.transcriptPath ? { hookPath: hook.transcriptPath } : {}),
+          ...(opts.session ? { explicitPath: opts.session } : {}),
+        });
+        if (sessionPath) params.sessionPath = sessionPath;
+        if (opts.keepLast) params.keepLastRaw = opts.keepLast;
+        if (opts.notify) params.notify = true;
 
-      const out = await runClaudeAutoCompactOnce(params);
+        const out = await runClaudeAutoCompactOnce(params);
 
-      process.exitCode = out.result === "success" || out.result === "pending_ready" || out.result === "not_triggered" ? 0 : 1;
-    });
+        process.exitCode =
+          out.result === "success" || out.result === "pending_ready" || out.result === "not_triggered" ? 0 : 1;
+      },
+    );
 }

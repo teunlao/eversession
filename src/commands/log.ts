@@ -1,11 +1,8 @@
-import type { Command } from "commander";
-
 import * as fs from "node:fs/promises";
-
-import { resolveClaudeSessionLogPath } from "../integrations/claude/log-paths.js";
+import type { Command } from "commander";
 import { formatClaudeAutoCompactLine, parseClaudeAutoCompactEntries } from "../integrations/claude/log.js";
+import { resolveClaudeSessionLogPath } from "../integrations/claude/log-paths.js";
 import { resolveSessionPathForCli } from "./session-ref.js";
-
 
 export function registerLogCommand(program: Command): void {
   program
@@ -30,7 +27,9 @@ export function registerLogCommand(program: Command): void {
       const sessionPath = resolved.value.sessionPath;
       const resolvedLog = await resolveClaudeSessionLogPath(sessionPath);
       if (!resolvedLog) {
-        process.stderr.write(`[evs log] No log file found (checked: ${sessionPath}.evs.log and EverSession central log)\n`);
+        process.stderr.write(
+          `[evs log] No log file found (checked: ${sessionPath}.evs.log and EverSession central log)\n`,
+        );
         process.exitCode = 2;
         return;
       }

@@ -16,14 +16,14 @@ async function writeTempSession(text: string): Promise<string> {
 async function runMigrate(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const stdoutChunks: string[] = [];
   const stderrChunks: string[] = [];
-  const spyOut = vi.spyOn(process.stdout, "write").mockImplementation(((chunk: any) => {
-    stdoutChunks.push(typeof chunk === "string" ? chunk : String(chunk));
+  const spyOut = vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+    stdoutChunks.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
     return true;
-  }) as any);
-  const spyErr = vi.spyOn(process.stderr, "write").mockImplementation(((chunk: any) => {
-    stderrChunks.push(typeof chunk === "string" ? chunk : String(chunk));
+  });
+  const spyErr = vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+    stderrChunks.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
     return true;
-  }) as any);
+  });
 
   const prevExitCode = process.exitCode;
   process.exitCode = undefined;
@@ -33,12 +33,13 @@ async function runMigrate(args: string[]): Promise<{ stdout: string; stderr: str
     program.exitOverride();
     registerMigrateCommand(program);
     await program.parseAsync(["node", "evs", ...args]);
+
+    const exitCode = process.exitCode ?? 0;
+    return { stdout: stdoutChunks.join(""), stderr: stderrChunks.join(""), exitCode };
   } finally {
-    const code = process.exitCode ?? 0;
     process.exitCode = prevExitCode;
     spyOut.mockRestore();
     spyErr.mockRestore();
-    return { stdout: stdoutChunks.join(""), stderr: stderrChunks.join(""), exitCode: code };
   }
 }
 

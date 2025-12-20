@@ -1,4 +1,4 @@
-import { Command } from "commander";
+import type { Command } from "commander";
 
 import { isEvsCliCommandPrefix } from "../core/brand.js";
 import { loadClaudeSettings, resolveClaudeSettingsPath, saveClaudeSettings } from "../integrations/claude/settings.js";
@@ -73,11 +73,11 @@ function commandPrefix(baseCommand: string): string {
   return parts[0] ?? trimmed;
 }
 
-function inspectExistingEventHooks(params: {
-  settings: ClaudeSettings;
-  event: string;
-  baseCommand: string;
-}): { hasExact: boolean; hasOtherSamePrefix: boolean; prefix: string } {
+function inspectExistingEventHooks(params: { settings: ClaudeSettings; event: string; baseCommand: string }): {
+  hasExact: boolean;
+  hasOtherSamePrefix: boolean;
+  prefix: string;
+} {
   const prefix = commandPrefix(params.baseCommand);
   const eventHooks = params.settings.hooks?.[params.event] ?? [];
   let hasExact = false;

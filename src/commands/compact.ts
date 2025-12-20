@@ -1,10 +1,10 @@
 import type { Command } from "commander";
 
 import { detectSession } from "../agents/detect.js";
-import { getAdapterForDetect, type AgentAdapter } from "../agents/registry.js";
+import { type AgentAdapter, getAdapterForDetect } from "../agents/registry.js";
 import { createBackup, writeFileAtomic } from "../core/fs.js";
 import { countBySeverity, type Issue } from "../core/issues.js";
-import { stringifyJsonl, readTextFile } from "../core/jsonl.js";
+import { readTextFile, stringifyJsonl } from "../core/jsonl.js";
 import { compareErrorCounts, printChangesHuman, printIssuesHuman } from "./common.js";
 import { looksLikeSessionRef, resolveSessionPathForCli } from "./session-ref.js";
 
@@ -177,10 +177,7 @@ export function registerCompactCommand(program: Command): void {
           finalParsed = adapter.parseValues(sessionPath, finalValues);
         }
 
-        const postIssues = [
-          ...finalParsed.issues,
-          ...(finalParsed.ok ? adapter.validate(finalParsed.session) : []),
-        ];
+        const postIssues = [...finalParsed.issues, ...(finalParsed.ok ? adapter.validate(finalParsed.session) : [])];
 
         const delta = compareErrorCounts(preIssues, postIssues);
         const worsened = delta.after > delta.before;

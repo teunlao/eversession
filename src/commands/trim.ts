@@ -1,10 +1,10 @@
 import type { Command } from "commander";
 
 import { detectSession } from "../agents/detect.js";
-import { getAdapterForDetect, type AgentAdapter } from "../agents/registry.js";
-import { stringifyJsonl } from "../core/jsonl.js";
+import { type AgentAdapter, getAdapterForDetect } from "../agents/registry.js";
 import { createBackup, writeFileAtomic } from "../core/fs.js";
 import { countBySeverity, type Issue } from "../core/issues.js";
+import { stringifyJsonl } from "../core/jsonl.js";
 import { parseCountOrPercent } from "../core/spec.js";
 import { compareErrorCounts, printChangesHuman, printIssuesHuman } from "./common.js";
 import { looksLikeSessionRef, resolveSessionPathForCli } from "./session-ref.js";
@@ -89,10 +89,7 @@ export function registerTrimCommand(program: Command): void {
         }
 
         const postParsed = adapter.parseValues(sessionPath, op.nextValues);
-        const postIssues = [
-          ...postParsed.issues,
-          ...(postParsed.ok ? adapter.validate(postParsed.session) : []),
-        ];
+        const postIssues = [...postParsed.issues, ...(postParsed.ok ? adapter.validate(postParsed.session) : [])];
 
         const delta = compareErrorCounts(preIssues, postIssues);
         const worsened = delta.after > delta.before;

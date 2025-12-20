@@ -1,9 +1,9 @@
 import type { Command } from "commander";
 
 import { detectSession } from "../agents/detect.js";
-import { getAdapterForDetect, type AgentAdapter } from "../agents/registry.js";
+import { type AgentAdapter, getAdapterForDetect } from "../agents/registry.js";
 import type { Issue } from "../core/issues.js";
-import { printIssuesHuman, hasErrors } from "./common.js";
+import { hasErrors, printIssuesHuman } from "./common.js";
 import { resolveSessionPathForCli } from "./session-ref.js";
 
 export function registerValidateCommand(program: Command): void {

@@ -2,9 +2,9 @@ import type { Command } from "commander";
 
 import { detectSession } from "../agents/detect.js";
 import { getAdapterForDetect } from "../agents/registry.js";
-import { stringifyJsonl } from "../core/jsonl.js";
 import { createBackup, writeFileAtomic } from "../core/fs.js";
 import { countBySeverity } from "../core/issues.js";
+import { stringifyJsonl } from "../core/jsonl.js";
 import { hasErrors, printChangesHuman, printIssuesHuman } from "./common.js";
 import { resolveSessionPathForCli } from "./session-ref.js";
 
@@ -64,10 +64,7 @@ export function registerMigrateCommand(program: Command): void {
         }
 
         const postParsed = adapter.parseValues(sessionPath, migrated.nextValues);
-        const postIssues = [
-          ...postParsed.issues,
-          ...(postParsed.ok ? adapter.validate(postParsed.session) : []),
-        ];
+        const postIssues = [...postParsed.issues, ...(postParsed.ok ? adapter.validate(postParsed.session) : [])];
         const postHasErrors = hasErrors(postIssues);
         const aborted = postHasErrors && opts.force !== true && opts.dryRun !== true;
 

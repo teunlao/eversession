@@ -7,7 +7,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import { registerStatuslineCommand } from "./statusline.js";
 
-async function runStatusline(args: string[], cwd: string): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+async function runStatusline(
+  args: string[],
+  cwd: string,
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const stdoutChunks: string[] = [];
   const stderrChunks: string[] = [];
   const spyLog = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
@@ -27,13 +30,14 @@ async function runStatusline(args: string[], cwd: string): Promise<{ stdout: str
     program.exitOverride();
     registerStatuslineCommand(program);
     await program.parseAsync(["node", "evs", ...args]);
+
+    const exitCode = process.exitCode ?? 0;
+    return { stdout: stdoutChunks.join(""), stderr: stderrChunks.join(""), exitCode };
   } finally {
-    const code = process.exitCode ?? 0;
     process.exitCode = prevExitCode;
     spyLog.mockRestore();
     spyConsoleError.mockRestore();
     spyCwd.mockRestore();
-    return { stdout: stdoutChunks.join(""), stderr: stderrChunks.join(""), exitCode: code };
   }
 }
 

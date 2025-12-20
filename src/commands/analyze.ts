@@ -1,7 +1,7 @@
 import type { Command } from "commander";
 
 import { detectSession } from "../agents/detect.js";
-import { getAdapterForDetect, type AgentAdapter } from "../agents/registry.js";
+import { type AgentAdapter, getAdapterForDetect } from "../agents/registry.js";
 import { countBySeverity, type Issue } from "../core/issues.js";
 import { printIssuesHuman } from "./common.js";
 import { resolveSessionPathForCli } from "./session-ref.js";

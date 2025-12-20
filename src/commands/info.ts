@@ -1,9 +1,9 @@
 import type { Command } from "commander";
-import { buildClaudeInfoReport } from "../integrations/claude/info.js";
-import { isClaudeHookInvocation } from "../integrations/claude/context.js";
-import { resolveClaudeActiveSession } from "../integrations/claude/active-session.js";
 import type { Issue } from "../core/issues.js";
+import { resolveClaudeActiveSession } from "../integrations/claude/active-session.js";
+import { isClaudeHookInvocation } from "../integrations/claude/context.js";
 import { readClaudeHookInputIfAny } from "../integrations/claude/hook-input.js";
+import { buildClaudeInfoReport } from "../integrations/claude/info.js";
 import { printIssuesHuman } from "./common.js";
 
 export function registerInfoCommand(program: Command): void {
@@ -26,7 +26,10 @@ export function registerInfoCommand(program: Command): void {
 
       if ("error" in resolved) {
         if (resolved.issues && opts.json) {
-          process.stdout.write(JSON.stringify({ agent: "unknown", cwd: opts.cwd ?? process.cwd(), issues: resolved.issues }, null, 2) + "\n");
+          process.stdout.write(
+            JSON.stringify({ agent: "unknown", cwd: opts.cwd ?? process.cwd(), issues: resolved.issues }, null, 2) +
+              "\n",
+          );
           process.exitCode = isHookInvocation ? 0 : 2;
           return;
         }

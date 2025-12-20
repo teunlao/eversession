@@ -1,6 +1,5 @@
-import type { Command } from "commander";
-
 import { spawn } from "node:child_process";
+import type { Command } from "commander";
 
 import { resolveClaudeSessionLogPath } from "../integrations/claude/log-paths.js";
 import { resolveSessionPathForCli } from "./session-ref.js";
@@ -44,7 +43,13 @@ async function spawnDetached(bin: string, args: string[]): Promise<void> {
     await attempt(bin);
   } catch (err) {
     const code = hasErrorCode(err) ? String(err.code) : undefined;
-    if (process.platform === "win32" && code === "ENOENT" && !bin.includes("\\") && !bin.includes("/") && !bin.endsWith(".cmd")) {
+    if (
+      process.platform === "win32" &&
+      code === "ENOENT" &&
+      !bin.includes("\\") &&
+      !bin.includes("/") &&
+      !bin.endsWith(".cmd")
+    ) {
       await attempt(`${bin}.cmd`);
       return;
     }
