@@ -12,4 +12,3 @@ describe("core/threshold", () => {
     expect(parseTokenThreshold("140.5k")).toBe(140500);
   });
 });
-

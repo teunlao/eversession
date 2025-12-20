@@ -9,4 +9,3 @@ export function parseTokenThreshold(input: string): number {
   const multiplier = m[2] ? 1000 : 1;
   return Math.floor(value * multiplier);
 }
-

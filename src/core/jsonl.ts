@@ -52,4 +52,3 @@ export async function writeJsonlFile(path: string, values: unknown[]): Promise<v
 export async function readTextFile(path: string): Promise<string> {
   return readFile(path, "utf8");
 }
-

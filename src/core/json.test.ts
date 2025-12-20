@@ -30,4 +30,3 @@ describe("core/json", () => {
     expect(asArray("not-array", isNumber)).toBeUndefined();
   });
 });
-

@@ -18,4 +18,3 @@ describe("core/issues", () => {
     expect(countBySeverity(issues)).toEqual({ error: 2, warning: 2, info: 1 });
   });
 });
-

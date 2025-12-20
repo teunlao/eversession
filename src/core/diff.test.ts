@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { patienceDiff, summarizeDiff, type DiffLine } from "./diff.js";
+import { type DiffLine, patienceDiff, summarizeDiff } from "./diff.js";
 
 function lines(values: string[]): DiffLine[] {
   return values.map((text, idx) => ({ line: idx + 1, text }));
@@ -21,4 +21,3 @@ describe("diff", () => {
     expect(summary).toEqual({ equal: 2, insert: 1, delete: 0 });
   });
 });
-

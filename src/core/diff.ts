@@ -80,7 +80,15 @@ function findAnchors(a: DiffLine[], a0: number, a1: number, b: DiffLine[], b0: n
   return lis.map((i) => candidates[i]!).filter(Boolean);
 }
 
-function fallbackDiff(ops: DiffOp[], a: DiffLine[], a0: number, a1: number, b: DiffLine[], b0: number, b1: number): void {
+function fallbackDiff(
+  ops: DiffOp[],
+  a: DiffLine[],
+  a0: number,
+  a1: number,
+  b: DiffLine[],
+  b0: number,
+  b1: number,
+): void {
   let prefix = 0;
   while (a0 + prefix < a1 && b0 + prefix < b1) {
     const left = a[a0 + prefix];

@@ -1,5 +1,5 @@
-import { countBySeverity, type Issue } from "./issues.js";
 import type { Change, ChangeSet } from "./changes.js";
+import { countBySeverity, type Issue } from "./issues.js";
 
 export function printIssuesHuman(issues: Issue[]): void {
   for (const issue of issues) {

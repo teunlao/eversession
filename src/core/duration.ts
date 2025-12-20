@@ -10,4 +10,3 @@ export function parseDurationMs(input: string): number {
   if (unit === "ms") return Math.floor(value);
   return Math.floor(value * 1000);
 }
-

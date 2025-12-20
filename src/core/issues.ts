@@ -28,4 +28,3 @@ export function countBySeverity(issues: Issue[]): Record<Severity, number> {
   for (const issue of issues) out[issue.severity] += 1;
   return out;
 }
-

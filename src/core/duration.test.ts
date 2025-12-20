@@ -12,4 +12,3 @@ describe("core/duration", () => {
     expect(parseDurationMs("1.5s")).toBe(1500);
   });
 });
-

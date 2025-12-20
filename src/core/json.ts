@@ -1,10 +1,4 @@
-export type JsonValue =
-  | null
-  | boolean
-  | number
-  | string
-  | JsonValue[]
-  | { [key: string]: JsonValue };
+export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type JsonObject = { [key: string]: JsonValue };
 
@@ -26,10 +20,7 @@ export function asBoolean(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
 }
 
-export function asArray<T>(
-  value: unknown,
-  guard: (v: unknown) => v is T,
-): T[] | undefined {
+export function asArray<T>(value: unknown, guard: (v: unknown) => v is T): T[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const out: T[] = [];
   for (const item of value) {
@@ -38,4 +29,3 @@ export function asArray<T>(
   }
   return out;
 }
-

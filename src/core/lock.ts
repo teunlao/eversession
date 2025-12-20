@@ -54,4 +54,3 @@ export async function acquireLockWithWait(
 
   return undefined;
 }
-

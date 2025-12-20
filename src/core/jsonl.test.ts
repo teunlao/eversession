@@ -39,4 +39,3 @@ describe("core/jsonl", () => {
     await rm(dir, { recursive: true, force: true });
   });
 });
-

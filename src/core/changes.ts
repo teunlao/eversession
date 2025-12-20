@@ -10,4 +10,3 @@ export type ChangeSet = {
 export function isNoop(changeSet: ChangeSet): boolean {
   return changeSet.changes.length === 0;
 }
-
