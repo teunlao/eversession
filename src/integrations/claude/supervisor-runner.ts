@@ -1,16 +1,16 @@
+import { type ChildProcess, spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
-import { spawn, type ChildProcess } from "node:child_process";
 
 import { fileExists } from "../../core/fs.js";
-import {
-  controlLogPathForControlDir,
-  parseSupervisorControlCommandLine,
-  readSupervisorHandshake,
-  type ClaudeSupervisorControlCommand,
-  type ReloadMode,
-} from "./supervisor-control.js";
 import { applyClaudePendingCompactOnReload } from "./auto-compact.js";
 import { fixSessionBeforeReload } from "./post-reload-fix.js";
+import {
+  type ClaudeSupervisorControlCommand,
+  controlLogPathForControlDir,
+  parseSupervisorControlCommandLine,
+  type ReloadMode,
+  readSupervisorHandshake,
+} from "./supervisor-control.js";
 
 export type ClaudeSupervisorProcess = {
   exitCode: number;
@@ -81,10 +81,18 @@ async function stopChild(child: ChildProcess, timeoutMs: number): Promise<void> 
   });
 }
 
-async function waitForHandshake(params: { controlDir: string; runId: string; timeoutMs: number; signal?: AbortSignal }): Promise<{
-  sessionId: string;
-  transcriptPath: string;
-} | undefined> {
+async function waitForHandshake(params: {
+  controlDir: string;
+  runId: string;
+  timeoutMs: number;
+  signal?: AbortSignal;
+}): Promise<
+  | {
+      sessionId: string;
+      transcriptPath: string;
+    }
+  | undefined
+> {
   const deadline = Date.now() + params.timeoutMs;
   while (!params.signal?.aborted) {
     const hs = await readSupervisorHandshake(params.controlDir);
@@ -121,12 +129,7 @@ async function readNewControlCommands(params: { controlDir: string; fromLine: nu
   return { commands, nextLine: effectiveLines.length };
 }
 
-function spawnChild(params: {
-  bin: string;
-  args: string[];
-  env: NodeJS.ProcessEnv;
-  cwd?: string;
-}): ChildProcess {
+function spawnChild(params: { bin: string; args: string[]; env: NodeJS.ProcessEnv; cwd?: string }): ChildProcess {
   return spawn(params.bin, params.args, {
     stdio: "inherit",
     env: params.env,
@@ -164,7 +167,12 @@ export async function runClaudeSupervisorRunner(opts: ClaudeSupervisorRunnerOpti
     });
   };
 
-  let child = spawnChild({ bin: opts.bin, args: opts.initialArgs, env: baseEnv, ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}) });
+  let child = spawnChild({
+    bin: opts.bin,
+    args: opts.initialArgs,
+    env: baseEnv,
+    ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
+  });
   attachExitHandler(child, activeToken);
 
   while (!opts.signal?.aborted) {

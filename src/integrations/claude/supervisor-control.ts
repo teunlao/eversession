@@ -1,8 +1,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-
-import { asString, isJsonObject } from "../../core/json.js";
 import { fileExists, writeFileAtomic } from "../../core/fs.js";
+import { asString, isJsonObject } from "../../core/json.js";
 
 export type ReloadMode = "manual" | "auto" | "off";
 

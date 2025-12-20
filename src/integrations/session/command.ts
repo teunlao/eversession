@@ -1,14 +1,14 @@
 import * as path from "node:path";
 
 import type { SessionDiscoveryReport, SessionHit } from "../../agents/session-discovery/types.js";
-import type { Issue } from "../../core/issues.js";
 import { printIssuesHuman } from "../../core/cli.js";
-import { readClaudeHookInputIfAny } from "../claude/hook-input.js";
+import type { Issue } from "../../core/issues.js";
 import { resolveClaudeActiveSession, toClaudeSessionDiscoveryReport } from "../claude/active-session.js";
-import { discoverClaudeSessionReport, type ClaudeDiscoveryOptions } from "../claude/session-discovery.js";
+import { readClaudeHookInputIfAny } from "../claude/hook-input.js";
 import { defaultClaudeProjectsDir } from "../claude/paths.js";
-import { discoverCodexSessionReport, type CodexDiscoveryOptions } from "../codex/session-discovery.js";
+import { type ClaudeDiscoveryOptions, discoverClaudeSessionReport } from "../claude/session-discovery.js";
 import { defaultCodexSessionsDir } from "../codex/paths.js";
+import { type CodexDiscoveryOptions, discoverCodexSessionReport } from "../codex/session-discovery.js";
 
 type AgentChoice = "auto" | "claude" | "codex";
 
@@ -146,7 +146,8 @@ export async function runSessionCommand(opts: SessionCommandOptions): Promise<vo
     return;
   }
 
-  const canUseExecutionContext = !opts.cwd && !opts.sessionId && !opts.match && (agent === "auto" || agent === "claude");
+  const canUseExecutionContext =
+    !opts.cwd && !opts.sessionId && !opts.match && (agent === "auto" || agent === "claude");
   if (canUseExecutionContext) {
     const hook = await readClaudeHookInputIfAny(25);
     const resolved = await resolveClaudeActiveSession({
@@ -225,7 +226,8 @@ export async function runSessionCommand(opts: SessionCommandOptions): Promise<vo
 
   if (opts.json) {
     process.stdout.write(JSON.stringify(report, null, 2) + "\n");
-    process.exitCode = report.agent === "unknown" ? 2 : report.confidence === "high" ? pickExitCodeForReport(report) : 2;
+    process.exitCode =
+      report.agent === "unknown" ? 2 : report.confidence === "high" ? pickExitCodeForReport(report) : 2;
     return;
   }
 

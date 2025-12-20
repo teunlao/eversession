@@ -1,8 +1,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-
-import { asString, isJsonObject } from "../../core/json.js";
 import { fileExists } from "../../core/fs.js";
+import { asString, isJsonObject } from "../../core/json.js";
 import { parseTokenThreshold } from "../../core/threshold.js";
 import { extractClaudeSessionIdFromPayload, resolveClaudeActiveCwd } from "./context.js";
 import { loadClaudeSettings, resolveClaudeSettingsPath } from "./settings.js";
@@ -139,7 +138,9 @@ export type AutoCompactHookConfig = {
   busyTimeout?: string;
 };
 
-export async function readAutoCompactConfigFromProjectSettings(projectDir: string): Promise<AutoCompactHookConfig | undefined> {
+export async function readAutoCompactConfigFromProjectSettings(
+  projectDir: string,
+): Promise<AutoCompactHookConfig | undefined> {
   const settingsPath = resolveClaudeSettingsPath({ global: false, cwd: projectDir });
   if (!(await fileExists(settingsPath))) return undefined;
 

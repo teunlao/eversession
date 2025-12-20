@@ -1,10 +1,6 @@
 import { deriveSessionIdFromPath } from "../../core/paths.js";
+import { appendSessionLog, readSessionState, updateSessionState } from "./eversession-session-storage.js";
 import { readClaudeHookInputIfAny } from "./hook-input.js";
-import {
-  appendSessionLog,
-  readSessionState,
-  updateSessionState,
-} from "./eversession-session-storage.js";
 import {
   appendSupervisorControlCommand,
   readClaudeSupervisorEnv,

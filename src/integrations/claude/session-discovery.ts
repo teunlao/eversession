@@ -36,7 +36,10 @@ async function listSessionCandidates(projectDir: string): Promise<Array<{ filePa
   }
 }
 
-export async function resolveCurrentClaudeSessionPath(cwd: string, opts?: { claudeProjectsDir?: string }): Promise<string | undefined> {
+export async function resolveCurrentClaudeSessionPath(
+  cwd: string,
+  opts?: { claudeProjectsDir?: string },
+): Promise<string | undefined> {
   const baseDir = opts?.claudeProjectsDir ?? defaultClaudeProjectsDir();
   const hashes = [cwdHashV2(cwd), cwdHashV1(cwd)];
   for (const h of hashes) {

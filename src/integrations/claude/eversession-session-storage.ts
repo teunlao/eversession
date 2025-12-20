@@ -12,9 +12,8 @@
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-
-import { asString, isJsonObject } from "../../core/json.js";
 import { fileExists, writeFileAtomic } from "../../core/fs.js";
+import { asString, isJsonObject } from "../../core/json.js";
 import { claudeEversessionBaseDir } from "./paths.js";
 
 // ============================================
@@ -99,7 +98,8 @@ function parseState(value: unknown): SessionState | undefined {
 
   if (isJsonObject(value.lastCompact)) {
     const ts = asString(value.lastCompact.ts);
-    const tokensBefore = typeof value.lastCompact.tokensBefore === "number" ? value.lastCompact.tokensBefore : undefined;
+    const tokensBefore =
+      typeof value.lastCompact.tokensBefore === "number" ? value.lastCompact.tokensBefore : undefined;
     const tokensAfter = typeof value.lastCompact.tokensAfter === "number" ? value.lastCompact.tokensAfter : undefined;
     const model = asString(value.lastCompact.model);
     if (ts && tokensBefore !== undefined && tokensAfter !== undefined && model) {

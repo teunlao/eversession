@@ -1,8 +1,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-
-import { asNumber, asString, isJsonObject } from "../../core/json.js";
 import { fileExists, writeFileAtomic } from "../../core/fs.js";
+import { asNumber, asString, isJsonObject } from "../../core/json.js";
 import { getSessionDir } from "./eversession-session-storage.js";
 
 export type PendingCompactStatus = "running" | "ready" | "failed" | "stale";
@@ -76,7 +75,9 @@ export function parsePendingCompact(value: unknown): PendingCompact | undefined 
 
   const statusRaw = asString(value.status);
   const status: PendingCompactStatus | undefined =
-    statusRaw === "running" || statusRaw === "ready" || statusRaw === "failed" || statusRaw === "stale" ? statusRaw : undefined;
+    statusRaw === "running" || statusRaw === "ready" || statusRaw === "failed" || statusRaw === "stale"
+      ? statusRaw
+      : undefined;
   if (!status) return undefined;
 
   const createdAt = asString(value.createdAt);
@@ -141,4 +142,3 @@ export async function clearPendingCompact(sessionId: string): Promise<void> {
     // ignore
   }
 }
-

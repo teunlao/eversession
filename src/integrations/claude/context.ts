@@ -1,7 +1,6 @@
-import type { ClaudeHookInput } from "./hook-input.js";
-
 import { asString, isJsonObject } from "../../core/json.js";
 import { expandHome } from "../../core/paths.js";
+import type { ClaudeHookInput } from "./hook-input.js";
 
 export function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim());

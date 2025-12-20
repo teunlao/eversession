@@ -12,8 +12,8 @@ import {
   parseReloadMode,
   parseSupervisorControlCommandLine,
   pendingReloadPathForControlDir,
-  readPendingReload,
   readClaudeSupervisorEnv,
+  readPendingReload,
   readSupervisorHandshake,
   writePendingReload,
   writeSupervisorHandshake,
@@ -32,7 +32,9 @@ describe("integrations/claude/supervisor-control", () => {
 
   it("readClaudeSupervisorEnv reads env and defaults reloadMode to manual", () => {
     expect(readClaudeSupervisorEnv({})).toBeUndefined();
-    expect(readClaudeSupervisorEnv({ EVS_CLAUDE_CONTROL_DIR: "/x", EVS_CLAUDE_RUN_ID: "r" })?.reloadMode).toBe("manual");
+    expect(readClaudeSupervisorEnv({ EVS_CLAUDE_CONTROL_DIR: "/x", EVS_CLAUDE_RUN_ID: "r" })?.reloadMode).toBe(
+      "manual",
+    );
     expect(
       readClaudeSupervisorEnv({
         EVS_CLAUDE_CONTROL_DIR: "/x",

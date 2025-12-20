@@ -1,12 +1,14 @@
+import { spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { spawn } from "node:child_process";
-
-import { asString, isJsonObject } from "../../core/json.js";
 import { fileExists } from "../../core/fs.js";
+import { asString, isJsonObject } from "../../core/json.js";
 import { deriveSessionIdFromPath, lockPathForSession } from "../../core/paths.js";
-import { countClaudeMessageTokensFromFile } from "./session-metrics.js";
 import { getClaudeStatuslineEnvDump, resolveClaudeProjectDirFromEnv } from "./context.js";
+import { getLogPath } from "./eversession-session-storage.js";
+import { readPendingCompact } from "./pending-compact.js";
+import { countClaudeMessageTokensFromFile } from "./session-metrics.js";
+import { loadClaudeSettings, resolveClaudeSettingsPath, saveClaudeSettings } from "./settings.js";
 import {
   defaultStatuslineDumpPath,
   extractClaudeStatuslineFields,
@@ -15,9 +17,6 @@ import {
   readAutoCompactThresholdFromProjectSettings,
   readClaudeAutoCompactSignals,
 } from "./statusline.js";
-import { loadClaudeSettings, resolveClaudeSettingsPath, saveClaudeSettings } from "./settings.js";
-import { getLogPath } from "./eversession-session-storage.js";
-import { readPendingCompact } from "./pending-compact.js";
 import { readClaudeSupervisorEnv } from "./supervisor-control.js";
 
 const ANSI_RESET = "\u001b[0m";
@@ -63,6 +62,23 @@ function formatK(value: number): string {
   const k = value / 1000;
   if (k < 10) return `${k.toFixed(1)}k`;
   return `${Math.round(k)}k`;
+}
+
+function formatProgressBar(
+  current: number | undefined,
+  threshold: number | undefined,
+  width: number = 8,
+): string | undefined {
+  if (current === undefined) return undefined;
+  if (threshold === undefined || !Number.isFinite(threshold) || threshold <= 0) return undefined;
+
+  const safeWidth = Number.isFinite(width) && width > 0 ? Math.floor(width) : 8;
+  const ratio = Math.max(0, Math.min(1, current / threshold));
+  const filled = Math.max(0, Math.min(safeWidth, Math.floor(ratio * safeWidth)));
+  const empty = Math.max(0, safeWidth - filled);
+
+  const bar = "█".repeat(filled) + "▒".repeat(empty);
+  return `[${bar}]`;
 }
 
 function withAnsi(text: string, ansiCode?: string): string {
@@ -202,7 +218,8 @@ export async function runClaudeStatuslineCommand(opts: StatuslineOptions): Promi
 
   const thresholdFromLog = signals.lastStart?.threshold ?? signals.lastResult?.threshold;
   const threshold =
-    thresholdFromLog ?? (claudeProjectDir ? await readAutoCompactThresholdFromProjectSettings(claudeProjectDir) : undefined);
+    thresholdFromLog ??
+    (claudeProjectDir ? await readAutoCompactThresholdFromProjectSettings(claudeProjectDir) : undefined);
 
   // "COMPACTING" should mean "actual compaction expected / in progress", not merely "auto-compact check is running".
   const overThreshold = tokens !== undefined && threshold !== undefined ? tokens >= threshold : false;
@@ -279,11 +296,16 @@ export async function runClaudeStatuslineCommand(opts: StatuslineOptions): Promi
   // which can break the chain-based `/context → Messages` count and make it look like tokens dropped to ~0.
   // Prefer the last successful compact's tokensAfter (from EVS log) to keep UX stable.
   const displayTokens =
-    needsReload && !hasPendingReady && signals.lastSuccess?.tokensAfter !== undefined ? signals.lastSuccess.tokensAfter : tokens;
+    needsReload && !hasPendingReady && signals.lastSuccess?.tokensAfter !== undefined
+      ? signals.lastSuccess.tokensAfter
+      : tokens;
   const currentTokensText = displayTokens !== undefined ? formatK(displayTokens) : "?";
-  const currentAnsi = displayTokens !== undefined && threshold !== undefined && displayTokens >= threshold ? ANSI_RED : undefined;
+  const currentAnsi =
+    displayTokens !== undefined && threshold !== undefined && displayTokens >= threshold ? ANSI_RED : undefined;
   const tokensText = `${withAnsi(currentTokensText, currentAnsi)}${withAnsi("/", ANSI_BRIGHT_BLACK)}${withAnsi(thresholdText, ANSI_BRIGHT_BLACK)}`;
-  process.stdout.write(`EVS: ${autoPrefix}${mode} ${tokensText}\n`);
+  const barText = formatProgressBar(displayTokens, threshold, 8);
+  const barSuffix = barText ? ` ${barText}` : "";
+  process.stdout.write(`EVS: ${autoPrefix}${mode} ${tokensText}${barSuffix}\n`);
 }
 
 type StatuslineInstallOptions = {

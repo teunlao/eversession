@@ -82,6 +82,12 @@ export async function buildClaudeInfoReport(params: {
     parseIssues: parsed.issues,
   };
 
-  const exitCode = params.isHookInvocation ? 0 : issueCounts.error > 0 ? 1 : parsed.issues.some((i) => i.severity === "error") ? 1 : 0;
+  const exitCode = params.isHookInvocation
+    ? 0
+    : issueCounts.error > 0
+      ? 1
+      : parsed.issues.some((i) => i.severity === "error")
+        ? 1
+        : 0;
   return { ok: true, report, exitCode };
 }

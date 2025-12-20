@@ -1,12 +1,13 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-
-import type { SessionConfidence, SessionDiscoveryMethod, SessionDiscoveryReport } from "../../agents/session-discovery/types.js";
-import type { ClaudeHookInput } from "./hook-input.js";
-
 import { discoverClaudeSession } from "../../agents/claude/discover.js";
-import { deriveSessionIdFromPath } from "../../core/paths.js";
+import type {
+  SessionConfidence,
+  SessionDiscoveryMethod,
+  SessionDiscoveryReport,
+} from "../../agents/session-discovery/types.js";
 import { fileExists } from "../../core/fs.js";
+import { deriveSessionIdFromPath } from "../../core/paths.js";
 import {
   extractClaudeCwdFromPayload,
   extractClaudeSessionIdFromPayload,
@@ -14,6 +15,7 @@ import {
   resolveClaudeActiveCwd,
   resolveClaudeTranscriptPathFromEnv,
 } from "./context.js";
+import type { ClaudeHookInput } from "./hook-input.js";
 import { claudeProjectHashFromTranscriptPath, defaultClaudeProjectsDir } from "./paths.js";
 
 export type ClaudeActiveSession = {
@@ -62,9 +64,7 @@ export async function resolveClaudeActiveSession(opts: {
     const method: SessionDiscoveryMethod = hookTranscript === transcriptPath ? "hook" : "env";
     const projectHash = claudeProjectHashFromTranscriptPath(transcriptPath);
     const sessionId =
-      hook?.sessionId ??
-      extractUuidFromJsonlPath(transcriptPath) ??
-      deriveSessionIdFromPath(transcriptPath);
+      hook?.sessionId ?? extractUuidFromJsonlPath(transcriptPath) ?? deriveSessionIdFromPath(transcriptPath);
 
     return {
       sessionPath: transcriptPath,

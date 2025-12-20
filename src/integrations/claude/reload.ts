@@ -1,7 +1,7 @@
 import { deriveSessionIdFromPath } from "../../core/paths.js";
 import { resolveClaudeKnownSessionId } from "./context.js";
-import { readClaudeHookInputIfAny } from "./hook-input.js";
 import { updateSessionState } from "./eversession-session-storage.js";
+import { readClaudeHookInputIfAny } from "./hook-input.js";
 import {
   appendSupervisorControlCommand,
   clearPendingReload,

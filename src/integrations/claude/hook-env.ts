@@ -8,7 +8,7 @@ import { readClaudeHookInputIfAny } from "./hook-input.js";
 function envValue(value: string): string {
   // Safe default for a shell-style env file.
   // If it is simple, keep it unquoted; otherwise single-quote and escape.
-  if (/^[A-Za-z0-9_\/:.\-]+$/.test(value)) return value;
+  if (/^[A-Za-z0-9_/:.-]+$/.test(value)) return value;
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 

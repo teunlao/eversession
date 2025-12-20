@@ -1,22 +1,21 @@
 import * as fs from "node:fs/promises";
 
 import { claudeAdapter } from "../../agents/claude/adapter.js";
+import { getChainEntries, getChainMessages, getEntryType, getUuid } from "../../agents/claude/model.js";
+import { expandToPreserveToolPairs } from "../../agents/claude/remove-utils.js";
 import type { ClaudeEntryLine } from "../../agents/claude/session.js";
 import { generateClaudeSummary, type ModelType } from "../../agents/claude/summary.js";
-import { getChainEntries, getChainMessages, getEntryType, getUuid } from "../../agents/claude/model.js";
 import { countClaudeMessagesTokens, planClaudeRemovalByTokens } from "../../agents/claude/tokens.js";
-import { expandToPreserveToolPairs } from "../../agents/claude/remove-utils.js";
 import { expandToFullAssistantTurns } from "../../agents/claude/turns.js";
-import { writeFileAtomic } from "../../core/fs.js";
-import { stringifyJsonl } from "../../core/jsonl.js";
-import { parseCountOrPercent, parseTokensOrPercent, type CountOrPercent } from "../../core/spec.js";
-import { acquireLockWithWait } from "../../core/lock.js";
 import { waitForStableFile } from "../../core/file-stability.js";
+import { writeFileAtomic } from "../../core/fs.js";
 import { countBySeverity, type Issue } from "../../core/issues.js";
+import { stringifyJsonl } from "../../core/jsonl.js";
+import { acquireLockWithWait } from "../../core/lock.js";
 import { sendOsNotification } from "../../core/notify.js";
 import { deriveSessionIdFromPath, lockPathForSession } from "../../core/paths.js";
+import { type CountOrPercent, parseCountOrPercent, parseTokensOrPercent } from "../../core/spec.js";
 import { resolveClaudeSessionPathFromInputs } from "./active-session.js";
-import { readClaudeSupervisorEnv } from "./supervisor-control.js";
 import {
   appendSessionLog,
   cleanupOldBackups,
@@ -25,10 +24,11 @@ import {
 } from "./eversession-session-storage.js";
 import {
   clearPendingCompact,
+  type PendingCompactSelection,
   readPendingCompact,
   writePendingCompact,
-  type PendingCompactSelection,
 } from "./pending-compact.js";
+import { readClaudeSupervisorEnv } from "./supervisor-control.js";
 
 export type AutoCompactResult =
   | "not_triggered"
@@ -75,10 +75,14 @@ export function isClaudeAutoCompactModel(value: string | undefined): value is Mo
   return value === "haiku" || value === "sonnet" || value === "opus";
 }
 
-function effectiveAmount(amountRaw: string, keepLastRaw: string | undefined): { amount: CountOrPercent; keepLast: boolean } {
+function effectiveAmount(
+  amountRaw: string,
+  keepLastRaw: string | undefined,
+): { amount: CountOrPercent; keepLast: boolean } {
   if (keepLastRaw && keepLastRaw.trim().length > 0) {
     const keep = parseCountOrPercent(keepLastRaw);
-    if (keep.kind !== "count") throw new Error("[AutoCompact] --keep-last requires an integer count (percent not supported).");
+    if (keep.kind !== "count")
+      throw new Error("[AutoCompact] --keep-last requires an integer count (percent not supported).");
     return { amount: keep, keepLast: true };
   }
   return { amount: parseCountOrPercent(amountRaw), keepLast: false };
@@ -536,7 +540,10 @@ export async function runClaudeAutoCompactOnce(opts: AutoCompactRunOptions): Pro
   }
 }
 
-function selectionMatches(params: { pending: PendingCompactSelection; current: PendingCompactSelection | undefined }): boolean {
+function selectionMatches(params: {
+  pending: PendingCompactSelection;
+  current: PendingCompactSelection | undefined;
+}): boolean {
   const pending = params.pending;
   const current = params.current;
   if (!current) return false;

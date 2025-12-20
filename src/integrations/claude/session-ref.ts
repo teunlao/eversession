@@ -3,9 +3,9 @@ import * as path from "node:path";
 import { fileExists } from "../../core/fs.js";
 import { expandHome } from "../../core/paths.js";
 import { isUuid, resolveClaudeActiveCwd, resolveClaudeTranscriptPathFromEnv } from "./context.js";
+import { readClaudeHookInputIfAny } from "./hook-input.js";
 import { defaultClaudeProjectsDir } from "./paths.js";
 import { discoverClaudeSessionReport, resolveClaudeTranscriptByUuidInProject } from "./session-discovery.js";
-import { readClaudeHookInputIfAny } from "./hook-input.js";
 
 export type ResolvedSessionPath = {
   sessionPath: string;
@@ -18,7 +18,13 @@ export type ResolveSessionPathResult =
 
 export function isPathLike(value: string): boolean {
   const trimmed = value.trim();
-  return trimmed.includes("/") || trimmed.includes("\\") || trimmed.endsWith(".jsonl") || trimmed.startsWith("~") || trimmed.startsWith(".");
+  return (
+    trimmed.includes("/") ||
+    trimmed.includes("\\") ||
+    trimmed.endsWith(".jsonl") ||
+    trimmed.startsWith("~") ||
+    trimmed.startsWith(".")
+  );
 }
 
 export function looksLikeSessionRef(value: string): boolean {
