@@ -1,30 +1,30 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { registerAnalyzeCommand } from "./commands/analyze.js";
+import { registerAutoCompactCommand } from "./commands/auto-compact.js";
+import { registerClaudeSupervisorCommand } from "./commands/claude.js";
 import { registerCleanCommand } from "./commands/clean.js";
+import { registerCleanupCommand } from "./commands/cleanup.js";
 import { registerCompactCommand } from "./commands/compact.js";
 import { registerDetectCommand } from "./commands/detect.js";
 import { registerDiffCommand } from "./commands/diff.js";
 import { registerExportCommand } from "./commands/export.js";
 import { registerFixCommand } from "./commands/fix.js";
+import { registerHookEnvCommand } from "./commands/hook-env.js";
+import { registerHooksCommand } from "./commands/hooks.js";
+import { registerInfoCommand } from "./commands/info.js";
+import { registerLogCommand } from "./commands/log.js";
 import { registerMigrateCommand } from "./commands/migrate.js";
+import { registerOpenCommand } from "./commands/open.js";
+import { registerReloadCommand } from "./commands/reload.js";
 import { registerRemoveCommand } from "./commands/remove.js";
+import { registerSessionCommand } from "./commands/session.js";
+import { registerSessionStartCommand } from "./commands/session-start.js";
+import { registerStatuslineCommand } from "./commands/statusline.js";
+import { registerStatuslineStatsCommand } from "./commands/statusline-stats.js";
 import { registerStripNoiseCommand } from "./commands/strip-noise.js";
 import { registerTrimCommand } from "./commands/trim.js";
 import { registerValidateCommand } from "./commands/validate.js";
-import { registerHooksCommand } from "./commands/hooks.js";
-import { registerSessionCommand } from "./commands/session.js";
-import { registerInfoCommand } from "./commands/info.js";
-import { registerAutoCompactCommand } from "./commands/auto-compact.js";
-import { registerHookEnvCommand } from "./commands/hook-env.js";
-import { registerOpenCommand } from "./commands/open.js";
-import { registerLogCommand } from "./commands/log.js";
-import { registerStatuslineCommand } from "./commands/statusline.js";
-import { registerStatuslineStatsCommand } from "./commands/statusline-stats.js";
-import { registerSessionStartCommand } from "./commands/session-start.js";
-import { registerReloadCommand } from "./commands/reload.js";
-import { registerClaudeSupervisorCommand } from "./commands/claude.js";
-import { registerCleanupCommand } from "./commands/cleanup.js";
 
 function hasErrorCode(err: unknown): err is { code: unknown } {
   return err !== null && typeof err === "object" && "code" in err;
@@ -78,7 +78,7 @@ registerClaudeSupervisorCommand(program);
 registerCleanupCommand(program);
 
 program.parseAsync(process.argv).catch((err: unknown) => {
-  const message = err instanceof Error ? err.stack ?? err.message : String(err);
+  const message = err instanceof Error ? (err.stack ?? err.message) : String(err);
   process.stderr.write(message + "\n");
   process.exitCode = 1;
 });
