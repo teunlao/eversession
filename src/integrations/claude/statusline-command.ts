@@ -78,7 +78,7 @@ function formatProgressBar(
   const empty = Math.max(0, safeWidth - filled);
 
   const bar = "█".repeat(filled) + "▒".repeat(empty);
-  return `[${bar}]`;
+  return `${bar}`;
 }
 
 function withAnsi(text: string, ansiCode?: string): string {
