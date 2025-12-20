@@ -24,7 +24,7 @@ export function getMessage(entry: ClaudeEntryLine): Record<string, unknown> | un
 
 export function getMessageRole(entry: ClaudeEntryLine): string | undefined {
   const message = getMessage(entry);
-  return message ? asString(message.role) ?? undefined : undefined;
+  return message ? (asString(message.role) ?? undefined) : undefined;
 }
 
 export function getContentBlocks(entry: ClaudeEntryLine): ContentBlock[] {
@@ -90,10 +90,7 @@ export function partitionThinkingFirst(blocks: ContentBlock[]): ContentBlock[] {
  * Check if entry is a compact_boundary.
  */
 export function isCompactBoundary(entry: ClaudeEntryLine): boolean {
-  return (
-    asString(entry.value.type) === "system" &&
-    asString(entry.value.subtype) === "compact_boundary"
-  );
+  return asString(entry.value.type) === "system" && asString(entry.value.subtype) === "compact_boundary";
 }
 
 /**

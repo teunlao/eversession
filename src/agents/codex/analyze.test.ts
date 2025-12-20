@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
-
-import { parseCodexSessionFromValues } from "./session.js";
 import { analyzeCodexSession } from "./analyze.js";
+import { parseCodexSessionFromValues } from "./session.js";
 
 describe("codex/analyze", () => {
   it("analyzes wrapped sessions (calls, outputs, compacted)", () => {
@@ -87,4 +86,3 @@ describe("codex/analyze", () => {
     expect(report.callStats.outputs).toBe(1);
   });
 });
-

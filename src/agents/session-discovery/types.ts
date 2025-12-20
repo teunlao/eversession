@@ -25,16 +25,16 @@ export type SessionHit = {
 
 export type SessionDiscoveryReport =
   | {
-    agent: AgentId;
-    cwd: string;
-    method: SessionDiscoveryMethod;
-    confidence: SessionConfidence;
-    session: SessionHit;
-    alternatives: SessionAlternative[];
-  }
+      agent: AgentId;
+      cwd: string;
+      method: SessionDiscoveryMethod;
+      confidence: SessionConfidence;
+      session: SessionHit;
+      alternatives: SessionAlternative[];
+    }
   | {
-    agent: "unknown";
-    cwd: string;
-    issues: Issue[];
-    alternatives: SessionAlternative[];
-  };
+      agent: "unknown";
+      cwd: string;
+      issues: Issue[];
+      alternatives: SessionAlternative[];
+    };

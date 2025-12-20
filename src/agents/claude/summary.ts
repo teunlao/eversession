@@ -1,6 +1,6 @@
-import type { ClaudeSession, ClaudeEntryLine } from "./session.js";
-import { asString } from "../../core/json.js";
 import { countTokens as anthropicCountTokens } from "@anthropic-ai/tokenizer";
+import { asString } from "../../core/json.js";
+import type { ClaudeEntryLine, ClaudeSession } from "./session.js";
 
 export type ModelType = "haiku" | "sonnet" | "opus";
 
@@ -192,7 +192,7 @@ export function formatEntriesForPrompt(entries: ClaudeEntryLine[]): string {
 }
 
 export async function generateClaudeSummary(
-  session: ClaudeSession,
+  _session: ClaudeSession,
   entriesToCompact: ClaudeEntryLine[],
   options: SummaryOptions = {},
 ): Promise<SummaryResult> {

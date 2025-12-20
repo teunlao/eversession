@@ -15,4 +15,3 @@ export function tombstoneClaudeEntryMessage(entry: ClaudeEntryLine, note: string
 
   msgObj.content = note;
 }
-

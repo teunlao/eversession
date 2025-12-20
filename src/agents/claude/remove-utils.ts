@@ -1,7 +1,7 @@
-import { asString } from "../../core/json.js";
 import type { Change } from "../../core/changes.js";
-import type { ClaudeEntryLine } from "./session.js";
+import { asString } from "../../core/json.js";
 import { getToolResultIds, getToolUseIds } from "./model.js";
+import type { ClaudeEntryLine } from "./session.js";
 
 export function buildToolMaps(entries: ClaudeEntryLine[]): {
   toolUses: Map<string, Set<number>>;
@@ -121,4 +121,3 @@ export function relinkParentUuidsOnRemoval(
 
   return relinked;
 }
-

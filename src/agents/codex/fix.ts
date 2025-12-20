@@ -1,6 +1,6 @@
-import { asString, isJsonObject } from "../../core/json.js";
 import type { Change, ChangeSet } from "../../core/changes.js";
-import type { CodexSession, CodexWrappedLine, CodexLegacyRecordLine, CodexLine } from "./session.js";
+import { asString, isJsonObject } from "../../core/json.js";
+import type { CodexLegacyRecordLine, CodexSession, CodexWrappedLine } from "./session.js";
 
 export type FixOptions = {
   removeOrphanOutputs?: boolean;

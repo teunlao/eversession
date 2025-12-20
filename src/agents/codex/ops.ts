@@ -1,7 +1,7 @@
-import { asString, isJsonObject } from "../../core/json.js";
 import type { Change, ChangeSet } from "../../core/changes.js";
+import { asString, isJsonObject } from "../../core/json.js";
 import type { CountOrPercent } from "../../core/spec.js";
-import type { CodexSession, CodexWrappedLine, CodexLegacyRecordLine } from "./session.js";
+import type { CodexLegacyRecordLine, CodexSession, CodexWrappedLine } from "./session.js";
 
 export type OpResult = { nextValues: unknown[]; changes: ChangeSet };
 
@@ -134,11 +134,16 @@ export function removeCodexLines(
 function collectHistoryLines(session: CodexSession): number[] {
   if (session.format === "wrapped") {
     const wrapped = session.lines.filter((l): l is CodexWrappedLine => l.kind === "wrapped");
-    const lastCompactedLine = wrapped.reduce((max, line) => (line.type === "compacted" ? Math.max(max, line.line) : max), 0);
+    const lastCompactedLine = wrapped.reduce(
+      (max, line) => (line.type === "compacted" ? Math.max(max, line.line) : max),
+      0,
+    );
     return wrapped.filter((l) => l.type === "response_item" && l.line > lastCompactedLine).map((l) => l.line);
   }
   return session.lines
-    .filter((l): l is CodexLegacyRecordLine => l.kind === "legacy_record" && asString(l.value.record_type) === undefined)
+    .filter(
+      (l): l is CodexLegacyRecordLine => l.kind === "legacy_record" && asString(l.value.record_type) === undefined,
+    )
     .map((l) => l.line);
 }
 
@@ -183,7 +188,8 @@ export function stripNoiseCodexSession(
   const nextValues: unknown[] = [];
 
   const shouldDropWrapped = (type: string): string | undefined => {
-    if (dropTurnContext && type === "turn_context") return "Dropped turn_context (noise; does not affect resume history).";
+    if (dropTurnContext && type === "turn_context")
+      return "Dropped turn_context (noise; does not affect resume history).";
     if (dropEventMsg && type === "event_msg") return "Dropped event_msg (noise; does not affect resume history).";
     return undefined;
   };

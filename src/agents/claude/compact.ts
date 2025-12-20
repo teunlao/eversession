@@ -5,14 +5,14 @@ import type { Change, ChangeSet } from "../../core/changes.js";
 import { asString } from "../../core/json.js";
 import type { CountOrPercent } from "../../core/spec.js";
 import { parseCountOrPercent, parseTokensOrPercent } from "../../core/spec.js";
+import type { CompactPrepareParams, CompactPrepareResult } from "../compact.js";
 import { findLastBoundaryIndex, getChainEntries, getChainMessages, getEntryType } from "./model.js";
-import { generateClaudeSummary, type ModelType } from "./summary.js";
 import { expandToPreserveToolPairs, relinkParentUuidsOnRemoval } from "./remove-utils.js";
 import type { ClaudeEntryLine, ClaudeSession } from "./session.js";
-import type { CompactPrepareParams, CompactPrepareResult } from "../compact.js";
+import { generateClaudeSummary, type ModelType } from "./summary.js";
+import { planClaudeRemovalByTokens } from "./tokens.js";
 import { tombstoneClaudeEntryMessage } from "./tombstone.js";
 import { expandToFullAssistantTurns } from "./turns.js";
-import { planClaudeRemovalByTokens } from "./tokens.js";
 
 export type CompactResult = { nextValues: unknown[]; changes: ChangeSet };
 
@@ -27,7 +27,10 @@ function parseModelType(value: string | undefined): ModelType | undefined {
   return undefined;
 }
 
-export async function prepareClaudeCompact(session: ClaudeSession, params: CompactPrepareParams): Promise<CompactPrepareResult> {
+export async function prepareClaudeCompact(
+  session: ClaudeSession,
+  params: CompactPrepareParams,
+): Promise<CompactPrepareResult> {
   const llmModel = parseModelType(params.model);
   if (params.model && !llmModel) {
     return {
@@ -226,7 +229,9 @@ export function compactClaudeSession(
   // Claude Code context is based on a parentUuid-linked chain. Compact operates on that chain.
   const chainMessages = getChainMessages(entries);
   const visibleMessages =
-    metaRootUser && !chainMessages.some((m) => m.line === metaRootUser.line) ? [metaRootUser, ...chainMessages] : chainMessages;
+    metaRootUser && !chainMessages.some((m) => m.line === metaRootUser.line)
+      ? [metaRootUser, ...chainMessages]
+      : chainMessages;
 
   const template = pickTemplate(entries);
   const outputSessionId = deriveOutputSessionId(session.path);
@@ -324,7 +329,9 @@ export function compactClaudeSession(
   }
 
   // First kept message chains from summary
-  const firstKeptMessage = visibleMessages.find((m) => !toRemove.has(m.line) && (!rootUser || m.line !== rootUser.line));
+  const firstKeptMessage = visibleMessages.find(
+    (m) => !toRemove.has(m.line) && (!rootUser || m.line !== rootUser.line),
+  );
   if (firstKeptMessage) {
     firstKeptMessage.value.parentUuid = summaryUuid;
     changes.push({
@@ -340,11 +347,11 @@ export function compactClaudeSession(
   const summaryEntry =
     !rewriteRoot && summaryInsertionAfterLine !== null
       ? buildCompactSummaryEntry(template, {
-        uuid: summaryUuid,
-        timestamp: now,
-        parentUuid: summaryParentUuid,
-        summary,
-      })
+          uuid: summaryUuid,
+          timestamp: now,
+          parentUuid: summaryParentUuid,
+          summary,
+        })
       : undefined;
   if (summaryEntry && outputSessionId) summaryEntry.sessionId = outputSessionId;
   let summaryInserted = rewriteRoot;

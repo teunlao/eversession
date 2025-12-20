@@ -1,6 +1,6 @@
 import { asString } from "../../core/json.js";
-import type { ClaudeEntryLine } from "./session.js";
 import { getMessageRole } from "./model.js";
+import type { ClaudeEntryLine } from "./session.js";
 
 export function expandToFullAssistantTurns(entries: ClaudeEntryLine[], toRemove: Set<number>): number {
   const uuidToEntry = new Map<string, ClaudeEntryLine>();

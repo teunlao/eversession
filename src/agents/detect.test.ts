@@ -47,4 +47,3 @@ describe("detectSession", () => {
     expect(detected.confidence).toBe("medium");
   });
 });
-

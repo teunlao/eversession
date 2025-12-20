@@ -1,9 +1,7 @@
 import type { Dirent } from "node:fs";
 import * as fs from "node:fs/promises";
-
-import { readJsonlLines } from "../../core/jsonl.js";
 import { asString, isJsonObject } from "../../core/json.js";
-import { fileExists } from "../../core/fs.js";
+import { readJsonlLines } from "../../core/jsonl.js";
 
 export async function normalizeCwdCandidates(cwdInput: string): Promise<string[]> {
   const out: string[] = [];
@@ -98,7 +96,10 @@ export function matchInTailRaw(
 export async function listDirs(baseDir: string): Promise<string[]> {
   try {
     const entries = await fs.readdir(baseDir, { withFileTypes: true });
-    return entries.filter((e) => e.isDirectory()).map((e) => e.name).sort();
+    return entries
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+      .sort();
   } catch {
     return [];
   }

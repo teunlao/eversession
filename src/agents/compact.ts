@@ -19,6 +19,4 @@ export type CompactPlan = {
   postFixParams?: unknown;
 };
 
-export type CompactPrepareResult =
-  | { ok: true; plan: CompactPlan }
-  | { ok: false; issues: Issue[]; exitCode?: number };
+export type CompactPrepareResult = { ok: true; plan: CompactPlan } | { ok: false; issues: Issue[]; exitCode?: number };

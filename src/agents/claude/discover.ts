@@ -1,15 +1,27 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-
-import { detectSession } from "../detect.js";
+import { fileExists } from "../../core/fs.js";
 import { countBySeverity, type Issue } from "../../core/issues.js";
+import { asString, isJsonObject } from "../../core/json.js";
+import { detectSession } from "../detect.js";
+import {
+  listFiles,
+  matchInTailRaw,
+  maxTimestampIso,
+  normalizeCwdCandidates,
+  readJsonlHead,
+  readJsonlTail,
+} from "../session-discovery/shared.js";
+import { isStrictFallbackAllowed } from "../session-discovery/strict.js";
+import type {
+  SessionAlternative,
+  SessionConfidence,
+  SessionDiscoveryMethod,
+  SessionDiscoveryReport,
+  SessionHit,
+} from "../session-discovery/types.js";
 import { parseClaudeSession } from "./session.js";
 import { validateClaudeSession } from "./validate.js";
-import type { SessionDiscoveryReport, SessionHit, SessionAlternative, SessionConfidence, SessionDiscoveryMethod } from "../session-discovery/types.js";
-import { listFiles, matchInTailRaw, maxTimestampIso, normalizeCwdCandidates, readJsonlHead, readJsonlTail } from "../session-discovery/shared.js";
-import { asString, isJsonObject } from "../../core/json.js";
-import { fileExists } from "../../core/fs.js";
-import { isStrictFallbackAllowed } from "../session-discovery/strict.js";
 
 export type DiscoverClaudeOptions = {
   cwd: string;
@@ -47,12 +59,16 @@ async function listClaudeSidechains(projectDir: string): Promise<string[]> {
     .sort();
 }
 
-async function validateHealth(filePath: string): Promise<{ health: { parseErrors: number; validationErrors: number; validationWarnings: number } }> {
+async function validateHealth(
+  filePath: string,
+): Promise<{ health: { parseErrors: number; validationErrors: number; validationWarnings: number } }> {
   const parsed = await parseClaudeSession(filePath);
   const vIssues = parsed.session ? validateClaudeSession(parsed.session) : [];
   const parseCounts = countBySeverity(parsed.issues);
   const vCounts = countBySeverity(vIssues);
-  return { health: { parseErrors: parseCounts.error, validationErrors: vCounts.error, validationWarnings: vCounts.warning } };
+  return {
+    health: { parseErrors: parseCounts.error, validationErrors: vCounts.error, validationWarnings: vCounts.warning },
+  };
 }
 
 function unknownReport(cwd: string, message: string): SessionDiscoveryReport {
@@ -124,7 +140,10 @@ export async function discoverClaudeSession(opts: DiscoverClaudeOptions): Promis
           return t === "user" || t === "assistant";
         });
         const tailHasMessages = tail.some(
-          (t) => t.kind === "json" && isJsonObject(t.value) && (asString(t.value.type) === "user" || asString(t.value.type) === "assistant"),
+          (t) =>
+            t.kind === "json" &&
+            isJsonObject(t.value) &&
+            (asString(t.value.type) === "user" || asString(t.value.type) === "assistant"),
         );
         if (!headHasMessages && !tailHasMessages) continue;
       }
@@ -163,7 +182,16 @@ export async function discoverClaudeSession(opts: DiscoverClaudeOptions): Promis
   // Strategy 2: --match (expensive)
   if (opts.match && opts.match.trim().length > 0) {
     const needle = opts.match.trim();
-    const hits: Array<{ filePath: string; id: string; projectHash: string; score: number; lastActivity?: string; mtime: string; reason: string; dirPriority: number }> = [];
+    const hits: Array<{
+      filePath: string;
+      id: string;
+      projectHash: string;
+      score: number;
+      lastActivity?: string;
+      mtime: string;
+      reason: string;
+      dirPriority: number;
+    }> = [];
 
     for (const c of candidates.slice(0, opts.maxCandidates)) {
       const { tail, invalidJsonLines } = await readJsonlTail(c.filePath, opts.tailLines);
@@ -175,7 +203,12 @@ export async function discoverClaudeSession(opts: DiscoverClaudeOptions): Promis
           const t = asString(o.type);
           return t === "user" || t === "assistant";
         });
-        const tailHasMessages = tail.some((t) => t.kind === "json" && isJsonObject(t.value) && (asString(t.value.type) === "user" || asString(t.value.type) === "assistant"));
+        const tailHasMessages = tail.some(
+          (t) =>
+            t.kind === "json" &&
+            isJsonObject(t.value) &&
+            (asString(t.value.type) === "user" || asString(t.value.type) === "assistant"),
+        );
         if (!headHasMessages && !tailHasMessages) continue;
       }
       const tailJson = tail.filter((t): t is { kind: "json"; line: number; value: unknown } => t.kind === "json");
@@ -186,7 +219,16 @@ export async function discoverClaudeSession(opts: DiscoverClaudeOptions): Promis
       score += invalidJsonLines > 0 ? -50 : 0;
       score += 10;
 
-      const hit: { filePath: string; id: string; projectHash: string; score: number; lastActivity?: string; mtime: string; reason: string; dirPriority: number } = {
+      const hit: {
+        filePath: string;
+        id: string;
+        projectHash: string;
+        score: number;
+        lastActivity?: string;
+        mtime: string;
+        reason: string;
+        dirPriority: number;
+      } = {
         filePath: c.filePath,
         id: c.id,
         projectHash: c.projectHash,
@@ -226,7 +268,9 @@ export async function discoverClaudeSession(opts: DiscoverClaudeOptions): Promis
     if (opts.validate) session.health = (await validateHealth(best.filePath)).health;
     if (opts.includeSidechains) session.sidechains = await listClaudeSidechains(path.dirname(best.filePath));
 
-    const alternatives: SessionAlternative[] = hits.slice(0, 5).map((h) => ({ path: h.filePath, score: h.score, reason: h.reason }));
+    const alternatives: SessionAlternative[] = hits
+      .slice(0, 5)
+      .map((h) => ({ path: h.filePath, score: h.score, reason: h.reason }));
     return { agent: "claude", cwd: opts.cwd, method: "match", confidence, session, alternatives };
   }
 
@@ -253,14 +297,18 @@ export async function discoverClaudeSession(opts: DiscoverClaudeOptions): Promis
     const parsedLastActivityMs = lastActivity ? Date.parse(lastActivity) : 0;
     // If the file has no timestamps yet (often true right after Claude creates a new session file),
     // fall back to filesystem mtime as a best-effort activity proxy.
-    const lastActivityMs = Number.isFinite(parsedLastActivityMs) && parsedLastActivityMs > 0 ? parsedLastActivityMs : st.mtimeMs;
+    const lastActivityMs =
+      Number.isFinite(parsedLastActivityMs) && parsedLastActivityMs > 0 ? parsedLastActivityMs : st.mtimeMs;
 
     const headHasMessages = jsonObjects.some((o) => {
       const t = asString(o.type);
       return t === "user" || t === "assistant";
     });
     const tailHasMessages = tail.some(
-      (t) => t.kind === "json" && isJsonObject(t.value) && (asString(t.value.type) === "user" || asString(t.value.type) === "assistant"),
+      (t) =>
+        t.kind === "json" &&
+        isJsonObject(t.value) &&
+        (asString(t.value.type) === "user" || asString(t.value.type) === "assistant"),
     );
     const hasMessages = headHasMessages || tailHasMessages;
 
@@ -370,6 +418,8 @@ export async function discoverClaudeSession(opts: DiscoverClaudeOptions): Promis
   if (opts.validate) session.health = (await validateHealth(best.filePath)).health;
   if (opts.includeSidechains) session.sidechains = await listClaudeSidechains(path.dirname(best.filePath));
 
-  const alternatives: SessionAlternative[] = ranked.slice(1, 6).map((r) => ({ path: r.filePath, score: r.score, reason: r.reason }));
+  const alternatives: SessionAlternative[] = ranked
+    .slice(1, 6)
+    .map((r) => ({ path: r.filePath, score: r.score, reason: r.reason }));
   return { agent: "claude", cwd: opts.cwd, method: best.method, confidence, session, alternatives };
 }

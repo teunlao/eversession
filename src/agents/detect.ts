@@ -1,5 +1,5 @@
-import { readJsonlLines } from "../core/jsonl.js";
 import { asString, isJsonObject } from "../core/json.js";
+import { readJsonlLines } from "../core/jsonl.js";
 import type { DetectResult } from "./types.js";
 
 type SampleItem =

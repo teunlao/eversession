@@ -1,14 +1,12 @@
-import type { Issue } from "../core/issues.js";
 import type { ChangeSet } from "../core/changes.js";
+import type { Issue } from "../core/issues.js";
 import type { AgentId } from "./agent-id.js";
-import type { ExportResult } from "./export.js";
-import type { Suggestion, SuggestParams } from "./validate.js";
 import type { AnalyzeDetail, AnalyzeParams } from "./analyze.js";
 import type { CompactPrepareParams, CompactPrepareResult } from "./compact.js";
+import type { ExportResult } from "./export.js";
+import type { Suggestion, SuggestParams } from "./validate.js";
 
-export type ParseResult<Session> =
-  | { ok: true; session: Session; issues: Issue[] }
-  | { ok: false; issues: Issue[] };
+export type ParseResult<Session> = { ok: true; session: Session; issues: Issue[] } | { ok: false; issues: Issue[] };
 
 export type OpResult = { nextValues: unknown[]; changes: ChangeSet };
 export type CleanResult = { matched: number; op?: OpResult };

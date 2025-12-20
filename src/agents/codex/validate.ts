@@ -1,7 +1,7 @@
-import { asString, isJsonObject } from "../../core/json.js";
 import type { Issue } from "../../core/issues.js";
-import type { CodexSession, CodexWrappedLine, CodexLegacyMetaLine, CodexLegacyRecordLine } from "./session.js";
-import type { SuggestParams, Suggestion } from "../validate.js";
+import { asString, isJsonObject } from "../../core/json.js";
+import type { Suggestion, SuggestParams } from "../validate.js";
+import type { CodexLegacyMetaLine, CodexLegacyRecordLine, CodexSession, CodexWrappedLine } from "./session.js";
 
 type CallKind = "function_call" | "custom_tool_call" | "local_shell_call";
 type OutputKind = "function_call_output" | "custom_tool_call_output";
@@ -325,9 +325,7 @@ function validateWrappedCallPairs(session: CodexSession, wrapped: CodexWrappedLi
     const out = outputs.get(callId);
     const matches =
       out &&
-      (call.kind === "custom_tool_call"
-        ? out.kind === "custom_tool_call_output"
-        : out.kind === "function_call_output");
+      (call.kind === "custom_tool_call" ? out.kind === "custom_tool_call_output" : out.kind === "function_call_output");
     if (!matches) {
       issues.push({
         severity: "warning",
@@ -422,7 +420,6 @@ function validateLegacy(session: CodexSession): Issue[] {
       const entry = outputs.get(callId);
       if (entry) entry.lines.push(rec.line);
       else outputs.set(callId, { lines: [rec.line], kind: "function_call_output" });
-      continue;
     }
   }
 

@@ -1,9 +1,9 @@
 import type { Change, ChangeSet } from "../../core/changes.js";
 import type { CountOrPercent } from "../../core/spec.js";
-import type { ClaudeEntryLine, ClaudeLine, ClaudeSession } from "./session.js";
-import { getEntryType } from "./model.js";
 import { fixClaudeSession } from "./fix.js";
+import { getEntryType } from "./model.js";
 import { expandToPreserveToolPairs, relinkParentUuidsOnRemoval } from "./remove-utils.js";
+import type { ClaudeEntryLine, ClaudeLine, ClaudeSession } from "./session.js";
 import { expandToFullAssistantTurns } from "./turns.js";
 
 export type OpResult = { nextValues: unknown[]; changes: ChangeSet };
@@ -70,15 +70,21 @@ export function removeClaudeLines(
   }
 
   if (!autoFix) {
-    return { nextValues: filteredLines.filter((l): l is ClaudeEntryLine => l.kind === "entry").map((l) => l.value), changes: { changes } };
+    return {
+      nextValues: filteredLines.filter((l): l is ClaudeEntryLine => l.kind === "entry").map((l) => l.value),
+      changes: { changes },
+    };
   }
 
-  const fixed = fixClaudeSession({ path: session.path, lines: filteredLines }, {
-    removeApiErrorMessages: false,
-    removeOrphanToolUses: false,
-    removeOrphanToolResults: true,
-    fixThinkingBlockOrder: true,
-  });
+  const fixed = fixClaudeSession(
+    { path: session.path, lines: filteredLines },
+    {
+      removeApiErrorMessages: false,
+      removeOrphanToolUses: false,
+      removeOrphanToolResults: true,
+      fixThinkingBlockOrder: true,
+    },
+  );
 
   return { nextValues: fixed.nextValues, changes: { changes: [...changes, ...fixed.changes.changes] } };
 }

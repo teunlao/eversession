@@ -1,6 +1,6 @@
 import { asString } from "../../core/json.js";
-import type { ClaudeEntryLine } from "./session.js";
 import { getContentBlocks, getMessage } from "./model.js";
+import type { ClaudeEntryLine } from "./session.js";
 
 export function getClaudeEntryText(entry: ClaudeEntryLine): string {
   const message = getMessage(entry);

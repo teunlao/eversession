@@ -1,14 +1,8 @@
 import { asString } from "../../core/json.js";
-import type { ClaudeEntryLine, ClaudeSession } from "./session.js";
 import type { AnalyzeDetail } from "../analyze.js";
+import { type BoundarySegment, getContentBlocks, getSessionStats, getToolResultIds, getToolUseIds } from "./model.js";
+import type { ClaudeEntryLine, ClaudeSession } from "./session.js";
 import { countClaudeMessagesTokens } from "./tokens.js";
-import {
-  getContentBlocks,
-  getToolResultIds,
-  getToolUseIds,
-  getSessionStats,
-  type BoundarySegment,
-} from "./model.js";
 
 export type ClaudeToolStats = {
   toolUseBlocks: number;

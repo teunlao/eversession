@@ -1,6 +1,6 @@
-import { asString, isJsonObject } from "../../core/json.js";
 import type { Change, ChangeSet } from "../../core/changes.js";
-import type { CodexSession, CodexLegacyMetaLine, CodexLegacyRecordLine, CodexUnknownJsonLine } from "./session.js";
+import { asString, isJsonObject } from "../../core/json.js";
+import type { CodexLegacyMetaLine, CodexLegacyRecordLine, CodexSession, CodexUnknownJsonLine } from "./session.js";
 
 export type MigrateResult = {
   nextValues: unknown[];
@@ -25,7 +25,8 @@ function extractCwdFromLegacyRecords(records: CodexLegacyRecordLine[]): string |
       if (!text) continue;
       if (!text.includes("<environment_context>")) continue;
       const m = text.match(/<cwd>([^<]+)<\/cwd>/);
-      if (m && m[1]) return m[1];
+      const cwd = m?.[1];
+      if (cwd) return cwd;
     }
   }
   return undefined;
@@ -95,13 +96,21 @@ export function migrateLegacyCodexToWrapped(session: CodexSession): MigrateResul
   for (const rec of records) {
     const recordType = asString(rec.value.record_type);
     if (recordType) {
-      changes.push({ kind: "delete_line", line: rec.line, reason: "Dropped legacy record_type line during migration." });
+      changes.push({
+        kind: "delete_line",
+        line: rec.line,
+        reason: "Dropped legacy record_type line during migration.",
+      });
       continue;
     }
 
     const t = asString(rec.value.type);
     if (!t) {
-      changes.push({ kind: "delete_line", line: rec.line, reason: "Dropped legacy line without a `type` field during migration." });
+      changes.push({
+        kind: "delete_line",
+        line: rec.line,
+        reason: "Dropped legacy line without a `type` field during migration.",
+      });
       continue;
     }
 
@@ -110,7 +119,11 @@ export function migrateLegacyCodexToWrapped(session: CodexSession): MigrateResul
       type: "response_item",
       payload: rec.value,
     });
-    changes.push({ kind: "update_line", line: rec.line, reason: "Wrapped legacy ResponseItem as {timestamp,type:\"response_item\",payload}." });
+    changes.push({
+      kind: "update_line",
+      line: rec.line,
+      reason: 'Wrapped legacy ResponseItem as {timestamp,type:"response_item",payload}.',
+    });
   }
 
   return { nextValues, changes: { changes } };

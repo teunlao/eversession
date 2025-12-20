@@ -101,9 +101,7 @@ function computeCallStatsWrapped(wrapped: CodexWrappedLine[]): CodexCallStats {
   let pairedCalls = 0;
   for (const [callId, callKind] of calls.entries()) {
     const kinds = outputKinds.get(callId);
-    const hasMatch =
-      kinds &&
-      (callKind === "custom" ? kinds.has("custom") : kinds.has("function"));
+    const hasMatch = kinds && (callKind === "custom" ? kinds.has("custom") : kinds.has("function"));
     if (hasMatch) pairedCalls += 1;
     else missingOutputs += 1;
   }

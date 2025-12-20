@@ -1,8 +1,8 @@
 import type { AgentAdapter } from "./adapter.js";
 import type { AgentId } from "./agent-id.js";
-import type { DetectResult } from "./types.js";
 import { claudeAdapter } from "./claude/adapter.js";
 import { codexAdapter } from "./codex/adapter.js";
+import type { DetectResult } from "./types.js";
 
 export type ClaudeAdapter = typeof claudeAdapter;
 export type CodexAdapter = typeof codexAdapter;

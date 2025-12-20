@@ -27,4 +27,3 @@ describe("codex text", () => {
     ).toBe("sum\nr1\nr2");
   });
 });
-

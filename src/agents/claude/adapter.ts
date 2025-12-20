@@ -1,20 +1,19 @@
-import type { AgentAdapter, ParseResult, OpResult } from "../adapter.js";
-import type { ClaudeSession } from "./session.js";
-import type { FixOptions } from "./fix.js";
 import type { CountOrPercent } from "../../core/spec.js";
-
-import { parseClaudeSession, parseClaudeSessionFromValues } from "./session.js";
-import { validateClaudeSession, suggestClaudeNextSteps } from "./validate.js";
-import { analyzeClaudeSession, buildClaudeAnalyzeDetail } from "./analyze.js";
-import { fixClaudeSession } from "./fix.js";
-import { compactClaudeSession, prepareClaudeCompact } from "./compact.js";
-import { trimClaudeSession, removeClaudeLines } from "./ops.js";
-import { exportClaudeSession } from "./export.js";
-import { cleanClaudeSession } from "./clean.js";
-import type { CleanParams } from "../clean.js";
-import type { SuggestParams } from "../validate.js";
+import type { AgentAdapter, OpResult, ParseResult } from "../adapter.js";
 import type { AnalyzeParams } from "../analyze.js";
+import type { CleanParams } from "../clean.js";
 import type { CompactPrepareParams } from "../compact.js";
+import type { SuggestParams } from "../validate.js";
+import { analyzeClaudeSession, buildClaudeAnalyzeDetail } from "./analyze.js";
+import { cleanClaudeSession } from "./clean.js";
+import { compactClaudeSession, prepareClaudeCompact } from "./compact.js";
+import { exportClaudeSession } from "./export.js";
+import type { FixOptions } from "./fix.js";
+import { fixClaudeSession } from "./fix.js";
+import { removeClaudeLines, trimClaudeSession } from "./ops.js";
+import type { ClaudeSession } from "./session.js";
+import { parseClaudeSession, parseClaudeSessionFromValues } from "./session.js";
+import { suggestClaudeNextSteps, validateClaudeSession } from "./validate.js";
 
 export type ClaudeCompactParams = {
   amount: CountOrPercent;

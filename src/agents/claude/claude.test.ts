@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
-
-import { parseClaudeSessionFromValues } from "./session.js";
-import { validateClaudeSession } from "./validate.js";
 import { fixClaudeSession } from "./fix.js";
 import { removeClaudeLines, trimClaudeSession } from "./ops.js";
+import { parseClaudeSessionFromValues } from "./session.js";
+import { validateClaudeSession } from "./validate.js";
 
 function mustParse(values: unknown[]) {
   const parsed = parseClaudeSessionFromValues("memory.jsonl", values);
@@ -11,7 +10,10 @@ function mustParse(values: unknown[]) {
   return parsed.session;
 }
 
-function findEntry(values: unknown[], predicate: (v: Record<string, unknown>) => boolean): Record<string, unknown> | undefined {
+function findEntry(
+  values: unknown[],
+  predicate: (v: Record<string, unknown>) => boolean,
+): Record<string, unknown> | undefined {
   for (const v of values) {
     if (typeof v !== "object" || v === null) continue;
     const obj = v as Record<string, unknown>;
@@ -168,7 +170,9 @@ describe("claude", () => {
 
     const fixed = fixClaudeSession(session, {});
     const values = fixed.nextValues;
-    expect(values.some((v) => typeof v === "object" && v !== null && (v as Record<string, unknown>).uuid === "a1")).toBe(false);
+    expect(
+      values.some((v) => typeof v === "object" && v !== null && (v as Record<string, unknown>).uuid === "a1"),
+    ).toBe(false);
 
     const a2 = findEntry(values, (v) => v.type === "assistant" && v.uuid === "a2");
     expect(a2).toBeTruthy();
@@ -204,7 +208,11 @@ describe("claude", () => {
         parentUuid: "a1",
         sessionId: "s1",
         requestId: "r1",
-        message: { id: "msg1", role: "assistant", content: [{ type: "tool_use", id: "toolu_1", name: "Read", input: {} }] },
+        message: {
+          id: "msg1",
+          role: "assistant",
+          content: [{ type: "tool_use", id: "toolu_1", name: "Read", input: {} }],
+        },
       },
       {
         type: "user",
@@ -222,7 +230,9 @@ describe("claude", () => {
 
     const fixed = fixClaudeSession(session, {});
     const values = fixed.nextValues;
-    expect(values.some((v) => typeof v === "object" && v !== null && (v as Record<string, unknown>).uuid === "a1")).toBe(false);
+    expect(
+      values.some((v) => typeof v === "object" && v !== null && (v as Record<string, unknown>).uuid === "a1"),
+    ).toBe(false);
 
     const a2 = findEntry(values, (v) => v.type === "assistant" && v.uuid === "a2");
     expect(a2).toBeTruthy();
@@ -250,7 +260,11 @@ describe("claude", () => {
         parentUuid: "u1",
         sessionId: "s1",
         requestId: "r1",
-        message: { id: "msg1", role: "assistant", content: [{ type: "tool_use", id: "toolu_1", name: "Read", input: {} }] },
+        message: {
+          id: "msg1",
+          role: "assistant",
+          content: [{ type: "tool_use", id: "toolu_1", name: "Read", input: {} }],
+        },
       },
       {
         type: "assistant",
@@ -271,7 +285,9 @@ describe("claude", () => {
 
     const fixed = fixClaudeSession(session, {});
     const values = fixed.nextValues;
-    expect(values.some((v) => typeof v === "object" && v !== null && (v as Record<string, unknown>).uuid === "u2")).toBe(true);
+    expect(
+      values.some((v) => typeof v === "object" && v !== null && (v as Record<string, unknown>).uuid === "u2"),
+    ).toBe(true);
 
     const post = validateClaudeSession(mustParse(values));
     expect(post.some((i) => i.severity === "error")).toBe(false);
@@ -382,7 +398,9 @@ describe("claude", () => {
 
     const trimmed = trimClaudeSession(session, { kind: "count", count: 2 });
     const values = trimmed.nextValues;
-    expect(values.some((v) => typeof v === "object" && v !== null && (v as Record<string, unknown>).uuid === "u2")).toBe(false);
+    expect(
+      values.some((v) => typeof v === "object" && v !== null && (v as Record<string, unknown>).uuid === "u2"),
+    ).toBe(false);
 
     const post = validateClaudeSession(mustParse(values));
     expect(post.some((i) => i.severity === "error")).toBe(false);
@@ -418,8 +436,12 @@ describe("claude", () => {
 
     const removed = removeClaudeLines(session, new Set([3]));
     const values = removed.nextValues;
-    expect(values.some((v) => typeof v === "object" && v !== null && (v as Record<string, unknown>).uuid === "a1")).toBe(false);
-    expect(values.some((v) => typeof v === "object" && v !== null && (v as Record<string, unknown>).uuid === "a2")).toBe(false);
+    expect(
+      values.some((v) => typeof v === "object" && v !== null && (v as Record<string, unknown>).uuid === "a1"),
+    ).toBe(false);
+    expect(
+      values.some((v) => typeof v === "object" && v !== null && (v as Record<string, unknown>).uuid === "a2"),
+    ).toBe(false);
     const u2 = findEntry(values, (v) => v.type === "user" && v.uuid === "u2");
     expect(u2?.parentUuid).toBe("u1");
 

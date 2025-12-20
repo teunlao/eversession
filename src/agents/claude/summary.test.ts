@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
-
-import { formatEntriesForPrompt } from "./summary.js";
 import type { ClaudeEntryLine } from "./session.js";
+import { formatEntriesForPrompt } from "./summary.js";
 
 describe("claude summary", () => {
   it("includes tool_use input so summaries can reference file paths", () => {
@@ -31,4 +30,3 @@ describe("claude summary", () => {
     expect(text).toContain('"path":"README.md"');
   });
 });
-

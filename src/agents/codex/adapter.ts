@@ -1,21 +1,20 @@
-import type { AgentAdapter, ParseResult, OpResult } from "../adapter.js";
-import type { CodexSession } from "./session.js";
 import type { CountOrPercent } from "../../core/spec.js";
-import type { FixOptions as FixCodexOptions } from "./fix.js";
-
-import { parseCodexSession, parseCodexSessionFromValues } from "./session.js";
-import { validateCodexSession, suggestCodexNextSteps } from "./validate.js";
-import { analyzeCodexSession, buildCodexAnalyzeDetail } from "./analyze.js";
-import { fixCodexSession } from "./fix.js";
-import { compactCodexSession, prepareCodexCompact } from "./compact.js";
-import { trimCodexSession, removeCodexLines, stripNoiseCodexSession } from "./ops.js";
-import { migrateLegacyCodexToWrapped } from "./migrate.js";
-import { exportCodexSession } from "./export.js";
-import { cleanCodexSession } from "./clean.js";
-import type { CleanParams } from "../clean.js";
-import type { SuggestParams } from "../validate.js";
+import type { AgentAdapter, OpResult, ParseResult } from "../adapter.js";
 import type { AnalyzeParams } from "../analyze.js";
+import type { CleanParams } from "../clean.js";
 import type { CompactPrepareParams } from "../compact.js";
+import type { SuggestParams } from "../validate.js";
+import { analyzeCodexSession, buildCodexAnalyzeDetail } from "./analyze.js";
+import { cleanCodexSession } from "./clean.js";
+import { compactCodexSession, prepareCodexCompact } from "./compact.js";
+import { exportCodexSession } from "./export.js";
+import type { FixOptions as FixCodexOptions } from "./fix.js";
+import { fixCodexSession } from "./fix.js";
+import { migrateLegacyCodexToWrapped } from "./migrate.js";
+import { removeCodexLines, stripNoiseCodexSession, trimCodexSession } from "./ops.js";
+import type { CodexSession } from "./session.js";
+import { parseCodexSession, parseCodexSessionFromValues } from "./session.js";
+import { suggestCodexNextSteps, validateCodexSession } from "./validate.js";
 
 export type CodexCompactParams = {
   amount: CountOrPercent;

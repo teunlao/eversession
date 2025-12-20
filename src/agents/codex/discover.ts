@@ -1,14 +1,26 @@
 import type { Stats } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-
-import { detectSession } from "../detect.js";
 import { countBySeverity, type Issue } from "../../core/issues.js";
+import { asString, isJsonObject } from "../../core/json.js";
+import { detectSession } from "../detect.js";
+import {
+  listFiles,
+  matchInTailRaw,
+  maxTimestampIso,
+  normalizeCwdCandidates,
+  readJsonlHead,
+  readJsonlTail,
+} from "../session-discovery/shared.js";
+import type {
+  SessionAlternative,
+  SessionConfidence,
+  SessionDiscoveryMethod,
+  SessionDiscoveryReport,
+  SessionHit,
+} from "../session-discovery/types.js";
 import { parseCodexSession } from "./session.js";
 import { validateCodexSession } from "./validate.js";
-import type { SessionAlternative, SessionConfidence, SessionDiscoveryMethod, SessionDiscoveryReport, SessionHit } from "../session-discovery/types.js";
-import { listFiles, matchInTailRaw, maxTimestampIso, normalizeCwdCandidates, readJsonlHead, readJsonlTail } from "../session-discovery/shared.js";
-import { asString, isJsonObject } from "../../core/json.js";
 
 export type DiscoverCodexOptions = {
   cwd: string;
@@ -35,12 +47,16 @@ function formatYyyyMmDd(date: Date): { yyyy: string; mm: string; dd: string } {
   return { yyyy: String(date.getFullYear()), mm: pad(date.getMonth() + 1), dd: pad(date.getDate()) };
 }
 
-async function validateHealth(filePath: string): Promise<{ health: { parseErrors: number; validationErrors: number; validationWarnings: number } }> {
+async function validateHealth(
+  filePath: string,
+): Promise<{ health: { parseErrors: number; validationErrors: number; validationWarnings: number } }> {
   const parsed = await parseCodexSession(filePath);
   const vIssues = parsed.session ? validateCodexSession(parsed.session) : [];
   const parseCounts = countBySeverity(parsed.issues);
   const vCounts = countBySeverity(vIssues);
-  return { health: { parseErrors: parseCounts.error, validationErrors: vCounts.error, validationWarnings: vCounts.warning } };
+  return {
+    health: { parseErrors: parseCounts.error, validationErrors: vCounts.error, validationWarnings: vCounts.warning },
+  };
 }
 
 function unknownReport(cwd: string, message: string): SessionDiscoveryReport {
@@ -147,7 +163,13 @@ export async function discoverCodexSession(opts: DiscoverCodexOptions): Promise<
     for (const c of candidates) {
       const { tail } = await readJsonlTail(c.filePath, opts.tailLines);
       if (!matchInTailRaw(tail, needle)) continue;
-      hits.push({ filePath: c.filePath, score: 10, mtimeMs: c.mtimeMs, mtimeIso: c.mtimeIso, reason: "Tail JSONL contains match text." });
+      hits.push({
+        filePath: c.filePath,
+        score: 10,
+        mtimeMs: c.mtimeMs,
+        mtimeIso: c.mtimeIso,
+        reason: "Tail JSONL contains match text.",
+      });
     }
     hits.sort((a, b) => b.mtimeMs - a.mtimeMs);
     const best = hits[0];
@@ -165,7 +187,9 @@ export async function discoverCodexSession(opts: DiscoverCodexOptions): Promise<
     };
     if (opts.validate) session.health = (await validateHealth(best.filePath)).health;
 
-    const alternatives: SessionAlternative[] = hits.slice(0, 5).map((h) => ({ path: h.filePath, score: h.score, reason: h.reason }));
+    const alternatives: SessionAlternative[] = hits
+      .slice(0, 5)
+      .map((h) => ({ path: h.filePath, score: h.score, reason: h.reason }));
     return { agent: "codex", cwd: opts.cwd, method: "match", confidence, session, alternatives };
   }
 
@@ -243,7 +267,8 @@ export async function discoverCodexSession(opts: DiscoverCodexOptions): Promise<
 
   const best = ranked[0];
   if (!best) return unknownReport(opts.cwd, "[Codex] Failed to rank any candidates.");
-  if (!opts.fallback && best.method === "fallback") return unknownReport(opts.cwd, "[Codex] No rollout matched target CWD and fallback is disabled.");
+  if (!opts.fallback && best.method === "fallback")
+    return unknownReport(opts.cwd, "[Codex] No rollout matched target CWD and fallback is disabled.");
 
   const confidence = scoreToConfidence(best.score, best.method);
   const session: SessionHit = {
@@ -259,6 +284,8 @@ export async function discoverCodexSession(opts: DiscoverCodexOptions): Promise<
   if (best.lastActivity) session.lastActivity = best.lastActivity;
   if (opts.validate) session.health = (await validateHealth(best.filePath)).health;
 
-  const alternatives: SessionAlternative[] = ranked.slice(0, 5).map((r) => ({ path: r.filePath, score: r.score, reason: r.reason }));
+  const alternatives: SessionAlternative[] = ranked
+    .slice(0, 5)
+    .map((r) => ({ path: r.filePath, score: r.score, reason: r.reason }));
   return { agent: "codex", cwd: opts.cwd, method: best.method, confidence, session, alternatives };
 }

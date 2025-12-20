@@ -1,16 +1,16 @@
-import { asString } from "../../core/json.js";
 import type { Change, ChangeSet } from "../../core/changes.js";
-import type { ClaudeEntryLine, ClaudeSession } from "./session.js";
-import { tombstoneClaudeEntryMessage } from "./tombstone.js";
+import { asString } from "../../core/json.js";
 import {
+  getContentBlocks,
   getMessage,
   getMessageRole,
-  getContentBlocks,
-  setContentBlocks,
   isThinkingBlock,
   partitionThinkingFirst,
+  setContentBlocks,
 } from "./model.js";
 import { buildToolMaps, expandToPreserveToolPairs, relinkParentUuidsOnRemoval } from "./remove-utils.js";
+import type { ClaudeEntryLine, ClaudeSession } from "./session.js";
+import { tombstoneClaudeEntryMessage } from "./tombstone.js";
 
 export type FixOptions = {
   removeOrphanToolResults?: boolean;

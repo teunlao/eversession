@@ -1,9 +1,9 @@
-import type { CleanParams } from "../clean.js";
-import type { CleanResult } from "../adapter.js";
-import type { CodexSession, CodexWrappedLine, CodexLegacyRecordLine } from "./session.js";
-import { getCodexMessageText, getCodexReasoningText } from "./text.js";
 import { asString, isJsonObject } from "../../core/json.js";
+import type { CleanResult } from "../adapter.js";
+import type { CleanParams } from "../clean.js";
 import { removeCodexLines } from "./ops.js";
+import type { CodexLegacyRecordLine, CodexSession, CodexWrappedLine } from "./session.js";
+import { getCodexMessageText, getCodexReasoningText } from "./text.js";
 
 function containsAny(haystack: string, needles: string[]): boolean {
   const lower = haystack.toLowerCase();

@@ -1,7 +1,7 @@
+import type { ExportItem, ExportParams, ExportResult } from "../export.js";
+import { getMessageRole } from "./model.js";
 import type { ClaudeEntryLine, ClaudeSession } from "./session.js";
 import { getClaudeEntryText } from "./text.js";
-import { getMessageRole } from "./model.js";
-import type { ExportItem, ExportParams, ExportResult } from "../export.js";
 
 export function exportClaudeSession(session: ClaudeSession, params: ExportParams): ExportResult {
   const full = params.full ?? false;

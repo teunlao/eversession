@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
-
-import { parseClaudeSessionFromValues } from "./session.js";
 import { analyzeClaudeSession } from "./analyze.js";
+import { parseClaudeSessionFromValues } from "./session.js";
 
 describe("claude/analyze", () => {
   it("counts entry types and tool blocks", () => {
@@ -65,4 +64,3 @@ describe("claude/analyze", () => {
     expect(report.sessionIds).toEqual(["s1"]);
   });
 });
-

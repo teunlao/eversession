@@ -40,4 +40,3 @@ export function getCodexReasoningText(payload: Record<string, unknown>): string 
 
   return parts.join("\n");
 }
-

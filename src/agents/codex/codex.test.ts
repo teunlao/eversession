@@ -2,13 +2,12 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-
-import { parseCodexSession, parseCodexSessionFromValues } from "./session.js";
-import { validateCodexSession } from "./validate.js";
+import { stringifyJsonl } from "../../core/jsonl.js";
 import { fixCodexSession } from "./fix.js";
 import { migrateLegacyCodexToWrapped } from "./migrate.js";
 import { stripNoiseCodexSession, trimCodexSession } from "./ops.js";
-import { stringifyJsonl } from "../../core/jsonl.js";
+import { parseCodexSession, parseCodexSessionFromValues } from "./session.js";
+import { validateCodexSession } from "./validate.js";
 
 async function writeTempJsonl(values: unknown[]): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "context-reactor-"));
@@ -56,7 +55,11 @@ describe("codex", () => {
       [
         "{not json",
         JSON.stringify({ timestamp: ts, type: "session_meta", payload: { id: "conv_1", timestamp: ts, cwd: "/tmp" } }),
-        JSON.stringify({ timestamp: ts, type: "response_item", payload: { type: "message", role: "user", content: [] } }),
+        JSON.stringify({
+          timestamp: ts,
+          type: "response_item",
+          payload: { type: "message", role: "user", content: [] },
+        }),
         "",
       ].join("\n"),
     );
@@ -197,10 +200,18 @@ describe("codex", () => {
     const ts = "2025-12-16T00:00:00.000Z";
     const parsed = parseCodexSessionFromValues("memory.jsonl", [
       { timestamp: ts, type: "session_meta", payload: { id: "conv_1", timestamp: ts, cwd: "/tmp" } },
-      { timestamp: ts, type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "old" }] } },
+      {
+        timestamp: ts,
+        type: "response_item",
+        payload: { type: "message", role: "user", content: [{ type: "input_text", text: "old" }] },
+      },
       { timestamp: ts, type: "response_item", payload: { type: "message", role: "assistant", content: [] } },
       { timestamp: ts, type: "compacted", payload: { message: "summary" } },
-      { timestamp: ts, type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "new" }] } },
+      {
+        timestamp: ts,
+        type: "response_item",
+        payload: { type: "message", role: "user", content: [{ type: "input_text", text: "new" }] },
+      },
       { timestamp: ts, type: "response_item", payload: { type: "message", role: "assistant", content: [] } },
     ]);
     expect(parsed.session?.format).toBe("wrapped");
@@ -213,7 +224,7 @@ describe("codex", () => {
       if (obj.type !== "response_item") return false;
       const payload = obj.payload;
       if (typeof payload !== "object" || payload === null) return false;
-      return JSON.stringify(payload).includes("\"old\"");
+      return JSON.stringify(payload).includes('"old"');
     });
     expect(hasOld).toBe(true);
 
@@ -223,7 +234,7 @@ describe("codex", () => {
       if (obj.type !== "response_item") return false;
       const payload = obj.payload;
       if (typeof payload !== "object" || payload === null) return false;
-      return JSON.stringify(payload).includes("\"new\"");
+      return JSON.stringify(payload).includes('"new"');
     });
     expect(hasNew).toBe(false);
 
@@ -243,8 +254,16 @@ describe("codex", () => {
     expect(parsed.session?.format).toBe("wrapped");
 
     const op = stripNoiseCodexSession(parsed.session!, {});
-    expect(op.nextValues.some((v) => typeof v === "object" && v !== null && (v as Record<string, unknown>).type === "event_msg")).toBe(false);
-    expect(op.nextValues.some((v) => typeof v === "object" && v !== null && (v as Record<string, unknown>).type === "turn_context")).toBe(false);
+    expect(
+      op.nextValues.some(
+        (v) => typeof v === "object" && v !== null && (v as Record<string, unknown>).type === "event_msg",
+      ),
+    ).toBe(false);
+    expect(
+      op.nextValues.some(
+        (v) => typeof v === "object" && v !== null && (v as Record<string, unknown>).type === "turn_context",
+      ),
+    ).toBe(false);
 
     const postParsed = parseCodexSessionFromValues("memory.jsonl", op.nextValues);
     const issues = validateCodexSession(postParsed.session!);
@@ -261,7 +280,9 @@ describe("codex", () => {
     expect(parsed.session?.format).toBe("legacy");
 
     const op = stripNoiseCodexSession(parsed.session!, {});
-    expect(op.nextValues.some((v) => typeof v === "object" && v !== null && "record_type" in (v as Record<string, unknown>))).toBe(false);
+    expect(
+      op.nextValues.some((v) => typeof v === "object" && v !== null && "record_type" in (v as Record<string, unknown>)),
+    ).toBe(false);
 
     const postParsed = parseCodexSessionFromValues("memory.jsonl", op.nextValues);
     const issues = validateCodexSession(postParsed.session!);
@@ -272,8 +293,16 @@ describe("codex", () => {
     const ts = "2025-12-16T00:00:00.000Z";
     const parsed = parseCodexSessionFromValues("memory.jsonl", [
       { timestamp: ts, type: "session_meta", payload: { id: "conv_1", timestamp: ts, cwd: "/tmp" } },
-      { timestamp: ts, type: "response_item", payload: { type: "function_call", name: "shell_command", arguments: "{}", call_id: "c1" } },
-      { timestamp: ts, type: "response_item", payload: { type: "custom_tool_call", name: "apply_patch", input: "{}", call_id: "c2" } },
+      {
+        timestamp: ts,
+        type: "response_item",
+        payload: { type: "function_call", name: "shell_command", arguments: "{}", call_id: "c1" },
+      },
+      {
+        timestamp: ts,
+        type: "response_item",
+        payload: { type: "custom_tool_call", name: "apply_patch", input: "{}", call_id: "c2" },
+      },
     ]);
     expect(parsed.session?.format).toBe("wrapped");
 
@@ -282,10 +311,14 @@ describe("codex", () => {
 
     const fixed = fixCodexSession(parsed.session!, { insertAbortedOutputs: true });
     expect(
-      fixed.nextValues.some((v) => JSON.stringify(v).includes("\"function_call_output\"") && JSON.stringify(v).includes("\"c1\"")),
+      fixed.nextValues.some(
+        (v) => JSON.stringify(v).includes('"function_call_output"') && JSON.stringify(v).includes('"c1"'),
+      ),
     ).toBe(true);
     expect(
-      fixed.nextValues.some((v) => JSON.stringify(v).includes("\"custom_tool_call_output\"") && JSON.stringify(v).includes("\"c2\"")),
+      fixed.nextValues.some(
+        (v) => JSON.stringify(v).includes('"custom_tool_call_output"') && JSON.stringify(v).includes('"c2"'),
+      ),
     ).toBe(true);
 
     const postParsed = parseCodexSessionFromValues("memory.jsonl", fixed.nextValues);
@@ -299,7 +332,11 @@ describe("codex", () => {
     const parsed = parseCodexSessionFromValues("memory.jsonl", [
       { timestamp: ts, type: "session_meta", payload: { id: "conv_1", timestamp: ts, cwd: "/tmp" } },
       { timestamp: ts, type: "response_item", payload: { type: "function_call_output", call_id: "c1", output: "x" } },
-      { timestamp: ts, type: "response_item", payload: { type: "function_call", call_id: "c1", name: "Read", arguments: "{}" } },
+      {
+        timestamp: ts,
+        type: "response_item",
+        payload: { type: "function_call", call_id: "c1", name: "Read", arguments: "{}" },
+      },
     ]);
     expect(parsed.session?.format).toBe("wrapped");
 
@@ -311,8 +348,16 @@ describe("codex", () => {
     const ts = "2025-12-16T00:00:00.000Z";
     const parsed = parseCodexSessionFromValues("memory.jsonl", [
       { timestamp: ts, type: "session_meta", payload: { id: "conv_1", timestamp: ts, cwd: "/tmp" } },
-      { timestamp: ts, type: "response_item", payload: { type: "custom_tool_call", call_id: "c1", name: "apply_patch", input: "{}" } },
-      { timestamp: ts, type: "response_item", payload: { type: "function_call_output", call_id: "c1", output: "wrong kind" } },
+      {
+        timestamp: ts,
+        type: "response_item",
+        payload: { type: "custom_tool_call", call_id: "c1", name: "apply_patch", input: "{}" },
+      },
+      {
+        timestamp: ts,
+        type: "response_item",
+        payload: { type: "function_call_output", call_id: "c1", output: "wrong kind" },
+      },
     ]);
     expect(parsed.session?.format).toBe("wrapped");
 
@@ -325,7 +370,11 @@ describe("codex", () => {
     const ts = "2025-12-16T00:00:00.000Z";
     const parsed = parseCodexSessionFromValues("memory.jsonl", [
       { timestamp: ts, type: "session_meta", payload: { id: "conv_1", timestamp: ts, cwd: "/tmp" } },
-      { timestamp: ts, type: "response_item", payload: { type: "function_call", call_id: "c1", name: "Read", arguments: "{}" } },
+      {
+        timestamp: ts,
+        type: "response_item",
+        payload: { type: "function_call", call_id: "c1", name: "Read", arguments: "{}" },
+      },
       { timestamp: ts, type: "response_item", payload: { type: "function_call_output", call_id: "c1", output: "1" } },
       { timestamp: ts, type: "response_item", payload: { type: "function_call_output", call_id: "c1", output: "2" } },
     ]);
@@ -340,8 +389,16 @@ describe("codex", () => {
     const ts = "2025-12-16T00:00:00.000Z";
     const parsed = parseCodexSessionFromValues("memory.jsonl", [
       { timestamp: ts, type: "session_meta", payload: { id: "conv_1", timestamp: ts, cwd: "/tmp" } },
-      { timestamp: ts, type: "response_item", payload: { type: "function_call", call_id: "c1", name: "Read", arguments: "{}" } },
-      { timestamp: ts, type: "response_item", payload: { type: "function_call", call_id: "c1", name: "Read", arguments: "{}" } },
+      {
+        timestamp: ts,
+        type: "response_item",
+        payload: { type: "function_call", call_id: "c1", name: "Read", arguments: "{}" },
+      },
+      {
+        timestamp: ts,
+        type: "response_item",
+        payload: { type: "function_call", call_id: "c1", name: "Read", arguments: "{}" },
+      },
       { timestamp: ts, type: "response_item", payload: { type: "function_call_output", call_id: "c1", output: "ok" } },
     ]);
     expect(parsed.session?.format).toBe("wrapped");

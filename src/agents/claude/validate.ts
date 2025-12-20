@@ -1,18 +1,18 @@
-import { asString } from "../../core/json.js";
 import type { Issue } from "../../core/issues.js";
-import type { ClaudeEntryLine, ClaudeSession } from "./session.js";
-import type { SuggestParams, Suggestion } from "../validate.js";
+import { asString } from "../../core/json.js";
+import type { Suggestion, SuggestParams } from "../validate.js";
 import {
+  getContentBlocks,
   getEntryType,
-  getUuid,
-  getParentUuid,
   getMessage,
   getMessageRole,
-  getContentBlocks,
-  getToolUseIds,
+  getParentUuid,
   getToolResultIds,
+  getToolUseIds,
+  getUuid,
   isThinkingBlock,
 } from "./model.js";
+import type { ClaudeEntryLine, ClaudeSession } from "./session.js";
 
 function getAssistantMergeKey(entry: ClaudeEntryLine): string | undefined {
   const message = getMessage(entry);
@@ -64,7 +64,8 @@ export function validateClaudeSession(session: ClaudeSession): Issue[] {
     issues.push({
       severity: "warning",
       code: "claude.broken_parent_chain",
-      message: "[Claude] parentUuid points to a missing uuid/messageId (Claude API ignores this, but it breaks local chains).",
+      message:
+        "[Claude] parentUuid points to a missing uuid/messageId (Claude API ignores this, but it breaks local chains).",
       location: { kind: "line", path: session.path, line: entry.line },
       details: { parentUuid: parent },
     });

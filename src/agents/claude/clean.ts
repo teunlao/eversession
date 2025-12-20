@@ -1,8 +1,8 @@
-import type { CleanParams } from "../clean.js";
 import type { CleanResult } from "../adapter.js";
+import type { CleanParams } from "../clean.js";
+import { removeClaudeLines } from "./ops.js";
 import type { ClaudeEntryLine, ClaudeSession } from "./session.js";
 import { getClaudeEntryText } from "./text.js";
-import { removeClaudeLines } from "./ops.js";
 
 function containsAny(haystack: string, needles: string[]): boolean {
   const lower = haystack.toLowerCase();

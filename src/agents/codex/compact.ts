@@ -1,8 +1,8 @@
-import { asString, isJsonObject } from "../../core/json.js";
 import type { Change, ChangeSet } from "../../core/changes.js";
-import { parseCountOrPercent, type CountOrPercent } from "../../core/spec.js";
-import type { CodexSession, CodexWrappedLine } from "./session.js";
+import { asString, isJsonObject } from "../../core/json.js";
+import { type CountOrPercent, parseCountOrPercent } from "../../core/spec.js";
 import type { CompactPrepareParams, CompactPrepareResult } from "../compact.js";
+import type { CodexSession, CodexWrappedLine } from "./session.js";
 
 export type CompactResult = { nextValues: unknown[]; changes: ChangeSet };
 
@@ -133,7 +133,10 @@ function looksLikeInitialContext(text: string): boolean {
   return false;
 }
 
-function findPinnedInitialContext(wrapped: CodexWrappedLine[]): { lines: number[]; payloads: Record<string, unknown>[] } {
+function findPinnedInitialContext(wrapped: CodexWrappedLine[]): {
+  lines: number[];
+  payloads: Record<string, unknown>[];
+} {
   const lines: number[] = [];
   const payloads: Record<string, unknown>[] = [];
 
@@ -191,7 +194,8 @@ export function compactCodexSession(
 
   let removeCount = 0;
   if (keepLast) {
-    if (amount.kind !== "count") throw new Error("[Codex] --keep-last requires an integer count (percent not supported).");
+    if (amount.kind !== "count")
+      throw new Error("[Codex] --keep-last requires an integer count (percent not supported).");
     removeCount = Math.max(0, candidates.length - amount.count);
   } else if (amount.kind === "percent") {
     removeCount = Math.floor(candidates.length * (amount.percent / 100));

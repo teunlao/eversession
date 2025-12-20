@@ -1,6 +1,6 @@
-import { isJsonObject, asString } from "../../core/json.js";
-import { loadJsonlFile, type JsonlLine } from "../../core/jsonl.js";
 import type { Issue } from "../../core/issues.js";
+import { isJsonObject } from "../../core/json.js";
+import { type JsonlLine, loadJsonlFile } from "../../core/jsonl.js";
 
 export type ClaudeEntryLine = {
   kind: "entry";
@@ -87,4 +87,3 @@ export function parseClaudeSessionFromValues(
   }));
   return parseClaudeJsonlLines(path, jsonl);
 }
-

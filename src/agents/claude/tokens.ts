@@ -2,12 +2,12 @@
  * Token counting utilities
  */
 
+import { countTokens as anthropicCountTokens, getTokenizer } from "@anthropic-ai/tokenizer";
 import { asString } from "../../core/json.js";
 import type { TokensOrPercent } from "../../core/spec.js";
-import type { ClaudeSession, ClaudeEntryLine } from "./session.js";
-import { getChainMessages } from "./model.js";
 import { planPrefixRemovalByTokens, type TokenRemovalPlan } from "../../core/tokens-removal.js";
-import { countTokens as anthropicCountTokens, getTokenizer } from "@anthropic-ai/tokenizer";
+import { getChainMessages } from "./model.js";
+import type { ClaudeEntryLine, ClaudeSession } from "./session.js";
 
 type Tokenizer = ReturnType<typeof getTokenizer>;
 
@@ -56,7 +56,6 @@ function countTokensForClaudeMessage(entry: ClaudeEntryLine, tokenizer: Tokenize
     if (t === "tool_result") {
       const resultContent = typeof b.content === "string" ? b.content : JSON.stringify(b.content);
       tokens += countTokensWithTokenizer(tokenizer, resultContent);
-      continue;
     }
   }
 
