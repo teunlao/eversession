@@ -23,7 +23,7 @@ describe("integrations/claude/statusline readAutoCompactConfigFromProjectSetting
             hooks: [
               {
                 type: "command",
-                command: "evs auto-compact start --threshold 140k --amount 25% --model haiku --busy-timeout 10s",
+                command: "evs auto-compact start --threshold 140k --amount-tokens 40% --model haiku --busy-timeout 10s",
                 timeout: 90,
               },
             ],
@@ -35,7 +35,7 @@ describe("integrations/claude/statusline readAutoCompactConfigFromProjectSetting
     const cfg = await readAutoCompactConfigFromProjectSettings(dir);
     expect(cfg).toEqual({
       thresholdTokens: 140_000,
-      amount: "25%",
+      amountTokens: "40%",
       model: "haiku",
       busyTimeout: "10s",
     });
@@ -49,8 +49,8 @@ describe("integrations/claude/statusline readAutoCompactConfigFromProjectSetting
         Stop: [
           {
             hooks: [
-              { type: "command", command: "evs auto-compact start --threshold 140k --amount 25%" },
-              { type: "command", command: "evs auto-compact start --threshold 150k --amount 25%" },
+              { type: "command", command: "evs auto-compact start --threshold 140k --amount-tokens 40%" },
+              { type: "command", command: "evs auto-compact start --threshold 150k --amount-tokens 40%" },
             ],
           },
         ],
@@ -59,6 +59,6 @@ describe("integrations/claude/statusline readAutoCompactConfigFromProjectSetting
 
     const cfg = await readAutoCompactConfigFromProjectSettings(dir);
     expect(cfg?.thresholdTokens).toBeUndefined();
-    expect(cfg?.amount).toBe("25%");
+    expect(cfg?.amountTokens).toBe("40%");
   });
 });

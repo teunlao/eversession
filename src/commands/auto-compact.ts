@@ -33,9 +33,9 @@ export function registerAutoCompactCommand(program: Command): void {
     .option("--cwd <path>", "working directory to resolve session (default: process.cwd())")
     .option("--session <path>", "Claude session JSONL path (overrides --cwd resolution)")
     .option("--threshold <n>", "token threshold (e.g. 140k)", "140k")
-    .option("--amount <n|%>", "amount to compact (default: 25%)", "25%")
+    .option("--amount <n|%>", "amount to compact by messages (default: 25%)")
     .option("--amount-messages <n|%>", "amount to compact by messages (alias for --amount)")
-    .option("--amount-tokens <n|%|k>", "amount to compact by tokens (e.g. 25% or 30k)")
+    .option("--amount-tokens <n|%|k>", "amount to compact by tokens (default: 40%; e.g. 40% or 30k)")
     .option("--keep-last <n>", "keep last N messages (integer)")
     .option("--model <model>", "haiku|sonnet|opus (default: haiku)", "haiku")
     .option("--busy-timeout <duration>", "max time to wait on locks/file stability (default: 10s)", "10s")
@@ -45,7 +45,7 @@ export function registerAutoCompactCommand(program: Command): void {
         cwd?: string;
         session?: string;
         threshold: string;
-        amount: string;
+        amount?: string;
         amountMessages?: string;
         amountTokens?: string;
         keepLast?: string;
@@ -59,10 +59,19 @@ export function registerAutoCompactCommand(program: Command): void {
         const model = isClaudeAutoCompactModel(opts.model) ? opts.model : "haiku";
         const busyTimeoutMs = parseDurationMs(opts.busyTimeout);
 
+        const defaultAmountTokens = "40%";
+        const defaultAmountMessages = "25%";
+
         const amountTokensRaw = opts.amountTokens?.trim();
         const amountMessagesRaw = opts.amountMessages?.trim();
+        const amountArgRaw = opts.amount?.trim();
         if (amountTokensRaw && amountMessagesRaw) {
           process.stderr.write("[evs auto-compact] Use either --amount-messages or --amount-tokens (not both).\n");
+          process.exitCode = 2;
+          return;
+        }
+        if (amountTokensRaw && amountArgRaw) {
+          process.stderr.write("[evs auto-compact] Use either --amount (messages) or --amount-tokens (not both).\n");
           process.exitCode = 2;
           return;
         }
@@ -72,8 +81,11 @@ export function registerAutoCompactCommand(program: Command): void {
           return;
         }
 
-        const amountMode: AutoCompactAmountMode = amountTokensRaw ? "tokens" : "messages";
-        const amountRaw = amountTokensRaw ?? amountMessagesRaw ?? opts.amount;
+        const hasKeepLast = opts.keepLast !== undefined && opts.keepLast.trim().length > 0;
+        const amountMode: AutoCompactAmountMode =
+          amountTokensRaw || (!amountMessagesRaw && !amountArgRaw && !hasKeepLast) ? "tokens" : "messages";
+        const amountRaw =
+          amountTokensRaw ?? (amountMode === "tokens" ? defaultAmountTokens : amountMessagesRaw ?? amountArgRaw ?? defaultAmountMessages);
 
         const sessionPath = await resolveClaudeSessionPathFromInputs({
           cwd,
@@ -159,9 +171,9 @@ export function registerAutoCompactCommand(program: Command): void {
     .option("--cwd <path>", "working directory to resolve session (default: process.cwd())")
     .option("--session <path>", "Claude session JSONL path (overrides --cwd resolution)")
     .option("--threshold <n>", "token threshold (e.g. 140k)", "140k")
-    .option("--amount <n|%>", "amount to compact (default: 25%)", "25%")
+    .option("--amount <n|%>", "amount to compact by messages (default: 25%)")
     .option("--amount-messages <n|%>", "amount to compact by messages (alias for --amount)")
-    .option("--amount-tokens <n|%|k>", "amount to compact by tokens (e.g. 25% or 30k)")
+    .option("--amount-tokens <n|%|k>", "amount to compact by tokens (default: 40%; e.g. 40% or 30k)")
     .option("--keep-last <n>", "keep last N messages (integer)")
     .option("--model <model>", "haiku|sonnet|opus (default: haiku)", "haiku")
     .option("--busy-timeout <duration>", "max time to wait on locks/file stability (default: 10s)", "10s")
@@ -171,7 +183,7 @@ export function registerAutoCompactCommand(program: Command): void {
         cwd?: string;
         session?: string;
         threshold: string;
-        amount: string;
+        amount?: string;
         amountMessages?: string;
         amountTokens?: string;
         keepLast?: string;
@@ -185,10 +197,19 @@ export function registerAutoCompactCommand(program: Command): void {
         const model = isClaudeAutoCompactModel(opts.model) ? opts.model : "haiku";
         const busyTimeoutMs = parseDurationMs(opts.busyTimeout);
 
+        const defaultAmountTokens = "40%";
+        const defaultAmountMessages = "25%";
+
         const amountTokensRaw = opts.amountTokens?.trim();
         const amountMessagesRaw = opts.amountMessages?.trim();
+        const amountArgRaw = opts.amount?.trim();
         if (amountTokensRaw && amountMessagesRaw) {
           process.stderr.write("[evs auto-compact] Use either --amount-messages or --amount-tokens (not both).\n");
+          process.exitCode = 2;
+          return;
+        }
+        if (amountTokensRaw && amountArgRaw) {
+          process.stderr.write("[evs auto-compact] Use either --amount (messages) or --amount-tokens (not both).\n");
           process.exitCode = 2;
           return;
         }
@@ -198,8 +219,11 @@ export function registerAutoCompactCommand(program: Command): void {
           return;
         }
 
-        const amountMode: AutoCompactAmountMode = amountTokensRaw ? "tokens" : "messages";
-        const amountRaw = amountTokensRaw ?? amountMessagesRaw ?? opts.amount;
+        const hasKeepLast = opts.keepLast !== undefined && opts.keepLast.trim().length > 0;
+        const amountMode: AutoCompactAmountMode =
+          amountTokensRaw || (!amountMessagesRaw && !amountArgRaw && !hasKeepLast) ? "tokens" : "messages";
+        const amountRaw =
+          amountTokensRaw ?? (amountMode === "tokens" ? defaultAmountTokens : amountMessagesRaw ?? amountArgRaw ?? defaultAmountMessages);
 
         const params: AutoCompactRunOptions = {
           cwd,

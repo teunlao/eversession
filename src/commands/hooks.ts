@@ -59,7 +59,7 @@ const AVAILABLE_HOOKS: Record<string, HookDefinition> = {
   "auto-compact-stop": {
     event: "Stop",
     description: "Auto-compact session on Stop (token threshold trigger)",
-    baseCommand: "evs auto-compact start --threshold 140k --amount 25% --model haiku --busy-timeout 10s --notify",
+    baseCommand: "evs auto-compact start --threshold 140k --amount-tokens 40% --model haiku --busy-timeout 10s --notify",
     timeout: 90,
     usesMatcher: false,
   },

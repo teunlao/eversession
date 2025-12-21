@@ -97,12 +97,25 @@ async function writeCodexSession(params: {
   return filePath;
 }
 
-beforeEach(() => {
+const prevEnv = {
+  EVS_CODEX_STATE_PATH: process.env.EVS_CODEX_STATE_PATH,
+  EVS_CLAUDE_TRANSCRIPT_PATH: process.env.EVS_CLAUDE_TRANSCRIPT_PATH,
+};
+
+beforeEach(async () => {
   vi.useFakeTimers();
+
+  // Avoid reading real user state files from ~/ during tests.
+  const envRoot = await mkdtemp(join(tmpdir(), "evs-pin-env-"));
+  process.env.EVS_CODEX_STATE_PATH = join(envRoot, "codex-state.json");
+  delete process.env.EVS_CLAUDE_TRANSCRIPT_PATH;
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  process.env.EVS_CODEX_STATE_PATH = prevEnv.EVS_CODEX_STATE_PATH;
+  if (prevEnv.EVS_CLAUDE_TRANSCRIPT_PATH) process.env.EVS_CLAUDE_TRANSCRIPT_PATH = prevEnv.EVS_CLAUDE_TRANSCRIPT_PATH;
+  else delete process.env.EVS_CLAUDE_TRANSCRIPT_PATH;
 });
 
 describe("cli pin / pins", () => {
@@ -190,6 +203,70 @@ describe("cli pin / pins", () => {
     expect(res.stderr).toBe("");
     const obj = JSON.parse(res.stdout) as { agent: string; sessionId: string; sessionPath: string; name: string };
     expect(obj.name).toBe("codex");
+    expect(obj.agent).toBe("codex");
+    expect(obj.sessionId).toBe(id);
+    expect(obj.sessionPath).toBe(sessionPath);
+  });
+
+  it("pins a Codex session without a ref when Codex state is present (even if Claude env is set)", async () => {
+    vi.setSystemTime(new Date("2025-12-20T00:00:00Z"));
+    const root = await mkdtemp(join(tmpdir(), "evs-pin-"));
+    const cwd = join(root, "repo");
+    await mkdir(cwd, { recursive: true });
+
+    const codexSessionsDir = join(root, "codex-sessions");
+    const pinsPath = join(root, "pins.json");
+    const id = "c1";
+    const sessionPath = await writeCodexSession({
+      codexSessionsDir,
+      dateDir: { yyyy: "2025", mm: "12", dd: "20" },
+      id,
+      cwd,
+    });
+
+    // Simulate a stale Claude env leak (this caused wrong pins in Codex).
+    const claudeLeak = join(root, "leak.jsonl");
+    await writeFile(
+      claudeLeak,
+      JSON.stringify({ type: "user", uuid: "u1", parentUuid: null, sessionId: "leak", timestamp: "2025-12-20T00:00:01Z" }) + "\n",
+      "utf8",
+    );
+    process.env.EVS_CLAUDE_TRANSCRIPT_PATH = claudeLeak;
+
+    const statePath = process.env.EVS_CODEX_STATE_PATH;
+    if (!statePath) throw new Error("Expected EVS_CODEX_STATE_PATH to be set");
+    await writeFile(
+      statePath,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          updatedAt: "2025-12-20T00:00:00Z",
+          byCwd: {
+            [cwd]: { threadId: id, updatedAt: "2025-12-20T00:00:00Z" },
+          },
+        },
+        null,
+        2,
+      ) + "\n",
+      "utf8",
+    );
+
+    const res = await runCli([
+      "pin",
+      "current",
+      "--cwd",
+      cwd,
+      "--codex-sessions-dir",
+      codexSessionsDir,
+      "--lookback-days",
+      "1",
+      "--pins-path",
+      pinsPath,
+      "--json",
+    ]);
+    expect(res.exitCode).toBe(0);
+    const obj = JSON.parse(res.stdout) as { agent: string; sessionId: string; sessionPath: string; name: string };
+    expect(obj.name).toBe("current");
     expect(obj.agent).toBe("codex");
     expect(obj.sessionId).toBe(id);
     expect(obj.sessionPath).toBe(sessionPath);

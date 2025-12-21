@@ -24,6 +24,13 @@ export const BRAND = {
       projectDir: "EVS_CLAUDE_PROJECT_DIR",
       bin: "EVS_CLAUDE_BIN",
     },
+    codex: {
+      bin: "EVS_CODEX_BIN",
+      controlDir: "EVS_CODEX_CONTROL_DIR",
+      runId: "EVS_CODEX_RUN_ID",
+      reloadMode: "EVS_CODEX_RELOAD_MODE",
+      statePath: "EVS_CODEX_STATE_PATH",
+    },
   },
 } as const;
 

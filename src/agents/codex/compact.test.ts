@@ -165,4 +165,82 @@ describe("codex compact", () => {
     const issues = validateCodexSession(postParsed.session!);
     expect(issues.some((i) => i.severity === "error")).toBe(false);
   });
+
+  it("preserves pinned initial context across multiple compactions", () => {
+    const ts = "2025-12-16T00:00:00.000Z";
+    const parsed = parseCodexSessionFromValues("memory.jsonl", [
+      { timestamp: ts, type: "session_meta", payload: { id: "conv_1", timestamp: ts, cwd: "/tmp" } },
+      {
+        timestamp: ts,
+        type: "response_item",
+        payload: {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: "<environment_context><cwd>/tmp</cwd></environment_context>" }],
+        },
+      },
+      {
+        timestamp: ts,
+        type: "response_item",
+        payload: {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: "# AGENTS.md instructions\n<INSTRUCTIONS>...</INSTRUCTIONS>" }],
+        },
+      },
+      {
+        timestamp: ts,
+        type: "response_item",
+        payload: { type: "message", role: "user", content: [{ type: "input_text", text: "q1" }] },
+      },
+      {
+        timestamp: ts,
+        type: "response_item",
+        payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "a1" }] },
+      },
+      {
+        timestamp: ts,
+        type: "response_item",
+        payload: { type: "message", role: "user", content: [{ type: "input_text", text: "q2" }] },
+      },
+      {
+        timestamp: ts,
+        type: "response_item",
+        payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "a2" }] },
+      },
+      {
+        timestamp: ts,
+        type: "response_item",
+        payload: { type: "message", role: "user", content: [{ type: "input_text", text: "q3" }] },
+      },
+      {
+        timestamp: ts,
+        type: "response_item",
+        payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "a3" }] },
+      },
+    ]);
+    expect(parsed.session?.format).toBe("wrapped");
+
+    const first = compactCodexSession(parsed.session!, { kind: "count", count: 2 }, "SUMMARY1");
+    const firstParsed = parseCodexSessionFromValues("memory.jsonl", first.nextValues);
+    expect(firstParsed.session?.format).toBe("wrapped");
+
+    const second = compactCodexSession(firstParsed.session!, { kind: "count", count: 2 }, "SUMMARY2");
+    const compactedIdx = second.nextValues.findIndex(
+      (v) => typeof v === "object" && v !== null && (v as Record<string, unknown>).type === "compacted",
+    );
+    expect(compactedIdx).toBeGreaterThan(-1);
+
+    const compacted = second.nextValues[compactedIdx] as Record<string, unknown>;
+    const payload = compacted.payload as unknown;
+    expect(typeof payload).toBe("object");
+    expect(payload).not.toBeNull();
+    const rh = (payload as Record<string, unknown>).replacement_history as unknown;
+    expect(Array.isArray(rh)).toBe(true);
+    expect((rh as unknown[]).length).toBe(3);
+
+    const postParsed = parseCodexSessionFromValues("memory.jsonl", second.nextValues);
+    const issues = validateCodexSession(postParsed.session!);
+    expect(issues.some((i) => i.severity === "error")).toBe(false);
+  });
 });

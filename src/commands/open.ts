@@ -1,6 +1,9 @@
 import { spawn } from "node:child_process";
 import type { Command } from "commander";
 
+import { detectSession } from "../agents/detect.js";
+import { discoverCodexSessionReport } from "../integrations/codex/session-discovery.js";
+import { defaultCodexSessionsDir } from "../integrations/codex/paths.js";
 import { resolveClaudeSessionLogPath } from "../integrations/claude/log-paths.js";
 import { resolveSessionPathForCli } from "./session-ref.js";
 
@@ -57,31 +60,190 @@ async function spawnDetached(bin: string, args: string[]): Promise<void> {
   }
 }
 
+type AgentChoice = "auto" | "claude" | "codex";
+
+function isAgentChoice(value: string): value is AgentChoice {
+  return value === "auto" || value === "claude" || value === "codex";
+}
+
+function looksLikeJsonlPath(value: string): boolean {
+  const trimmed = value.trim();
+  return (
+    trimmed.includes("/") ||
+    trimmed.includes("\\") ||
+    trimmed.endsWith(".jsonl") ||
+    trimmed.startsWith("~") ||
+    trimmed.startsWith(".")
+  );
+}
+
+async function resolveOpenSessionPath(params: {
+  agent: AgentChoice;
+  idArg: string | undefined;
+  cwd: string;
+  codexSessionsDir: string;
+}): Promise<{ agent: "claude" | "codex"; sessionPath: string } | { error: string; exitCode: number }> {
+  const idRaw = params.idArg?.trim();
+  if (idRaw && looksLikeJsonlPath(idRaw)) {
+    const resolvedPath = await resolveSessionPathForCli({
+      commandLabel: "open",
+      idArg: idRaw,
+      cwd: params.cwd,
+      allowDiscover: false,
+    });
+    if (!resolvedPath.ok) return { error: resolvedPath.error, exitCode: resolvedPath.exitCode };
+
+    const detected = await detectSession(resolvedPath.value.sessionPath);
+    if (detected.agent !== "claude" && detected.agent !== "codex") {
+      return { error: "[evs open] Unsupported or unknown session format (expected Claude or Codex JSONL).", exitCode: 2 };
+    }
+
+    if (params.agent === "claude" && detected.agent !== "claude") {
+      return { error: "[evs open] Expected a Claude session file. Re-run with --agent codex or omit --agent.", exitCode: 2 };
+    }
+    if (params.agent === "codex" && detected.agent !== "codex") {
+      return { error: "[evs open] Expected a Codex session file. Re-run with --agent claude or omit --agent.", exitCode: 2 };
+    }
+
+    return { agent: detected.agent, sessionPath: resolvedPath.value.sessionPath };
+  }
+
+  if (params.agent === "claude") {
+    const resolved = await resolveSessionPathForCli({
+      commandLabel: "open",
+      idArg: params.idArg,
+      cwd: params.cwd,
+      allowDiscover: true,
+    });
+    if (!resolved.ok) return { error: resolved.error, exitCode: resolved.exitCode };
+    return { agent: "claude", sessionPath: resolved.value.sessionPath };
+  }
+
+  if (params.agent === "codex") {
+    const report = await discoverCodexSessionReport({
+      cwd: params.cwd,
+      codexSessionsDir: params.codexSessionsDir,
+      fallback: true,
+      lookbackDays: 14,
+      maxCandidates: 200,
+      tailLines: 500,
+      validate: false,
+      ...(params.idArg ? { sessionId: params.idArg } : {}),
+    });
+    if (report.agent === "unknown") return { error: "[evs open] No Codex session found for this cwd.", exitCode: 2 };
+    if (report.confidence !== "high") {
+      return {
+        error: "[evs open] Cannot determine current Codex session with high confidence (ambiguous). Pass a session id.",
+        exitCode: 2,
+      };
+    }
+    return { agent: "codex", sessionPath: report.session.path };
+  }
+
+  // auto
+  if (idRaw && idRaw.length > 0) {
+    const claudeResolved = await resolveSessionPathForCli({
+      commandLabel: "open",
+      idArg: idRaw,
+      cwd: params.cwd,
+      allowDiscover: false,
+    });
+
+    const codexReport = await discoverCodexSessionReport({
+      cwd: params.cwd,
+      codexSessionsDir: params.codexSessionsDir,
+      fallback: true,
+      lookbackDays: 14,
+      maxCandidates: 200,
+      tailLines: 500,
+      validate: false,
+      sessionId: idRaw,
+    });
+
+    const claudePath = claudeResolved.ok ? claudeResolved.value.sessionPath : undefined;
+    const codexPath =
+      codexReport.agent === "codex" && codexReport.confidence === "high" ? codexReport.session.path : undefined;
+
+    if (claudePath && codexPath) {
+      return {
+        error: "[evs open] Session id matches both Claude and Codex. Re-run with --agent claude|codex.",
+        exitCode: 2,
+      };
+    }
+    if (claudePath) return { agent: "claude", sessionPath: claudePath };
+    if (codexPath) return { agent: "codex", sessionPath: codexPath };
+  }
+
+  // No id: prefer Claude only when there is explicit hook/env context.
+  const claudeContext = await resolveSessionPathForCli({
+    commandLabel: "open",
+    cwd: params.cwd,
+    allowDiscover: false,
+  });
+  if (claudeContext.ok) return { agent: "claude", sessionPath: claudeContext.value.sessionPath };
+
+  const codex = await discoverCodexSessionReport({
+    cwd: params.cwd,
+    codexSessionsDir: params.codexSessionsDir,
+    fallback: true,
+    lookbackDays: 14,
+    maxCandidates: 200,
+    tailLines: 500,
+    validate: false,
+  });
+  if (codex.agent !== "unknown" && codex.confidence === "high") return { agent: "codex", sessionPath: codex.session.path };
+
+  const claudeDiscover = await resolveSessionPathForCli({
+    commandLabel: "open",
+    cwd: params.cwd,
+    allowDiscover: true,
+  });
+  if (claudeDiscover.ok) return { agent: "claude", sessionPath: claudeDiscover.value.sessionPath };
+
+  return { error: "[evs open] No session found. Pass a .jsonl path or session id.", exitCode: 2 };
+}
+
 export function registerOpenCommand(program: Command): void {
   program
     .command("open")
-    .description("Print (or open) the active Claude Code session transcript")
-    .argument("[id]", "Claude transcript UUID (filename) or path to a .jsonl session file")
+    .description("Print (or open) the active session transcript (Claude Code or Codex)")
+    .argument("[id]", "session id (UUID) or path to a .jsonl session file")
+    .option("--agent <agent>", "auto|claude|codex (default: auto)", "auto")
     .option("--ide [name]", "open file in an IDE (default: vscode when flag is provided)")
     .option("--log", "print/open the EverSession session log instead of the transcript")
     .option("--cwd <path>", "working directory for fallback discovery (default: process.cwd())")
-    .action(async (idArg: string | undefined, opts: { ide?: IdeFlag; log?: boolean; cwd?: string }) => {
+    .option("--codex-sessions-dir <dir>", "override ~/.codex/sessions (advanced)")
+    .action(async (idArg: string | undefined, opts: { agent?: string; ide?: IdeFlag; log?: boolean; cwd?: string; codexSessionsDir?: string }) => {
       const ide = parseIdeFlag(opts.ide);
 
-      const resolved = await resolveSessionPathForCli({
-        commandLabel: "open",
+      const cwd = opts.cwd ?? process.cwd();
+      const agentRaw = (opts.agent ?? "auto").trim();
+      if (!isAgentChoice(agentRaw)) {
+        process.stderr.write("[evs open] Invalid --agent value (expected auto|claude|codex).\n");
+        process.exitCode = 2;
+        return;
+      }
+
+      const resolved = await resolveOpenSessionPath({
+        agent: agentRaw,
         idArg,
-        ...(opts.cwd ? { cwd: opts.cwd } : {}),
+        cwd,
+        codexSessionsDir: opts.codexSessionsDir ?? defaultCodexSessionsDir(),
       });
-      if (!resolved.ok) {
-        process.stderr.write(`${resolved.error}\n`);
+      if ("error" in resolved) {
+        process.stderr.write(resolved.error + "\n");
         process.exitCode = resolved.exitCode;
         return;
       }
 
-      const transcriptPath = resolved.value.sessionPath;
+      const transcriptPath = resolved.sessionPath;
       let targetPath = transcriptPath;
       if (opts.log) {
+        if (resolved.agent === "codex") {
+          process.stderr.write("[evs open] --log is not supported for Codex yet.\n");
+          process.exitCode = 2;
+          return;
+        }
         const resolvedLog = await resolveClaudeSessionLogPath(transcriptPath);
         if (!resolvedLog) {
           const fallbackMsg = `Log not found (checked: ${transcriptPath}.evs.log and EverSession central log).\n`;

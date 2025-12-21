@@ -13,6 +13,8 @@ import { isUuid } from "../integrations/claude/context.js";
 import { resolveClaudeTranscriptByUuidInProject } from "../integrations/claude/session-discovery.js";
 import { defaultCodexSessionsDir } from "../integrations/codex/paths.js";
 import { discoverCodexSessionReport } from "../integrations/codex/session-discovery.js";
+import { resolveCodexStatePath, resolveCodexThreadIdForCwd } from "../integrations/codex/state.js";
+import { readCodexSupervisorEnv, readSupervisorHandshake } from "../integrations/codex/supervisor-control.js";
 import { loadPinsFile, resolvePinsPath, savePinsFile, type PinnedAgent, type PinnedSession } from "../integrations/pins/storage.js";
 import { resolveSessionPathForCli } from "./session-ref.js";
 
@@ -123,8 +125,81 @@ async function resolveSessionPathForPin(params: {
   }
 
   // No ref: allow Claude-only “current session” pinning (hooks / env / discovery).
-  if (params.agent === "codex") {
-    return { error: "[evs pin] Missing session. Pass a session id or a .jsonl path.", exitCode: 2 };
+  const resolveCurrentCodexSession = async (): Promise<
+    { ok: true; sessionPath: string } | { ok: false; error: string; exitCode: number; hasCodexContext: boolean }
+  > => {
+    const supervisor = readCodexSupervisorEnv();
+    let threadId: string | undefined;
+
+    if (supervisor) {
+      try {
+        const handshake = await readSupervisorHandshake(supervisor.controlDir);
+        if (handshake && handshake.runId === supervisor.runId) threadId = handshake.threadId;
+      } catch {
+        // ignore
+      }
+    }
+
+    if (!threadId) {
+      try {
+        const statePath = resolveCodexStatePath();
+        threadId = await resolveCodexThreadIdForCwd({ cwd: params.cwd, statePath });
+      } catch {
+        // ignore
+      }
+    }
+
+    const hasCodexContext = supervisor !== undefined || threadId !== undefined;
+
+    if (!threadId) {
+      return {
+        ok: false,
+        hasCodexContext,
+        exitCode: 2,
+        error:
+          "[evs pin] Missing session. Pass a session id or a .jsonl path, or enable Codex notify (evs codex install).",
+      };
+    }
+
+    const report = await discoverCodexSessionReport({
+      cwd: params.cwd,
+      codexSessionsDir: params.codexSessionsDir,
+      sessionId: threadId,
+      fallback: false,
+      lookbackDays: params.lookbackDays,
+      maxCandidates: 200,
+      tailLines: 500,
+      validate: false,
+    });
+
+    if (report.agent === "codex" && report.confidence === "high") {
+      return { ok: true, sessionPath: report.session.path };
+    }
+
+    if (report.agent === "codex") {
+      return {
+        ok: false,
+        hasCodexContext: true,
+        exitCode: 2,
+        error:
+          "[evs pin] Cannot determine current Codex session with high confidence (ambiguous). Pass a session id or a .jsonl path.",
+      };
+    }
+
+    return {
+      ok: false,
+      hasCodexContext: true,
+      exitCode: 2,
+      error: `[evs pin] Codex session not found in lookback window for thread-id=${threadId}.`,
+    };
+  };
+
+  if (params.agent === "codex" || params.agent === "auto") {
+    const codexResolved = await resolveCurrentCodexSession();
+    if (codexResolved.ok) return { sessionPath: codexResolved.sessionPath, agent: "codex" };
+    if (params.agent === "codex" || codexResolved.hasCodexContext) {
+      return { error: codexResolved.error, exitCode: codexResolved.exitCode };
+    }
   }
 
   // IMPORTANT: do not use discovery here. When the user omits a ref we must avoid silently

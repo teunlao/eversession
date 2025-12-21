@@ -250,10 +250,12 @@ export async function runClaudeStatuslineCommand(opts: StatuslineOptions): Promi
       const config = claudeProjectDir ? await readAutoCompactConfigFromProjectSettings(claudeProjectDir) : undefined;
       const amountTokens = config?.amountTokens;
       const amountMessages = config?.amountMessages;
-      const amount = config?.amount ?? "25%";
+      const amount = config?.amount;
       const keepLast = config?.keepLast;
       const model = config?.model ?? "haiku";
       const busyTimeout = config?.busyTimeout ?? "10s";
+      const defaultAmountTokens = "40%";
+      const defaultAmountMessages = "25%";
 
       const cliPath = process.argv[1];
       if (cliPath) {
@@ -270,11 +272,21 @@ export async function runClaudeStatuslineCommand(opts: StatuslineOptions): Promi
           "--busy-timeout",
           busyTimeout,
         ];
-        if (amountTokens) args.push("--amount-tokens", amountTokens);
-        else if (amountMessages) args.push("--amount-messages", amountMessages);
-        else args.push("--amount", amount);
+        const keepLastRaw = keepLast;
+        const hasAmountTokens = amountTokens !== undefined && amountTokens.trim().length > 0;
 
-        if (keepLast && !amountTokens) args.push("--keep-last", keepLast);
+        if (keepLastRaw !== undefined && keepLastRaw.trim().length > 0 && !hasAmountTokens) {
+          args.push("--amount-messages", amountMessages ?? amount ?? defaultAmountMessages);
+          args.push("--keep-last", keepLastRaw);
+        } else if (amountTokens) {
+          args.push("--amount-tokens", amountTokens);
+        } else if (amountMessages) {
+          args.push("--amount-messages", amountMessages);
+        } else if (amount) {
+          args.push("--amount-messages", amount);
+        } else {
+          args.push("--amount-tokens", defaultAmountTokens);
+        }
 
         spawnDetached(args);
       }

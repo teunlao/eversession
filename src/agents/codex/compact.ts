@@ -133,12 +133,36 @@ function looksLikeInitialContext(text: string): boolean {
   return false;
 }
 
+function extractPinnedFromReplacementHistory(value: unknown): Record<string, unknown>[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const items = value.filter((v): v is Record<string, unknown> => isJsonObject(v));
+  if (items.length === 0) return [];
+
+  const last = items[items.length - 1];
+  if (last && asString(last.type) === "message" && asString(last.role) === "user") {
+    // In EVS-generated compactions we append a user-role summary message last; keep the pinned context only.
+    return items.slice(0, -1);
+  }
+  return items;
+}
+
 function findPinnedInitialContext(wrapped: CodexWrappedLine[]): {
   lines: number[];
   payloads: Record<string, unknown>[];
 } {
   const lines: number[] = [];
   const payloads: Record<string, unknown>[] = [];
+
+  // If we already compacted before, preserve the pinned initial context from the latest checkpoint.
+  for (let i = wrapped.length - 1; i >= 0; i -= 1) {
+    const line = wrapped[i];
+    if (!line) continue;
+    if (line.type !== "compacted") continue;
+    if (!isJsonObject(line.payload)) continue;
+    const rh = extractPinnedFromReplacementHistory(line.payload.replacement_history);
+    if (!rh || rh.length === 0) continue;
+    return { lines: [], payloads: rh };
+  }
 
   for (const line of wrapped) {
     if (line.type !== "response_item") continue;
@@ -173,6 +197,34 @@ function buildSummaryMessagePayload(summary: string): Record<string, unknown> {
   };
 }
 
+export type CodexPinnedInitialContext = {
+  lines: number[];
+  payloads: Record<string, unknown>[];
+};
+
+export type CodexCompactionParts = {
+  wrapped: CodexWrappedLine[];
+  responseItems: Array<CodexWrappedLine & { payload: Record<string, unknown> }>;
+  pinned: CodexPinnedInitialContext;
+  candidates: Array<CodexWrappedLine & { payload: Record<string, unknown> }>;
+};
+
+export function getCodexCompactionParts(session: CodexSession): CodexCompactionParts {
+  if (session.format !== "wrapped") {
+    throw new Error("[Codex] `compact` requires wrapped rollout sessions. Run `migrate --to codex-wrapped` first.");
+  }
+
+  const wrapped = session.lines.filter((l): l is CodexWrappedLine => l.kind === "wrapped");
+  const responseItems = wrapped.filter(
+    (l): l is CodexWrappedLine & { payload: Record<string, unknown> } => l.type === "response_item" && isJsonObject(l.payload),
+  );
+  const pinned = findPinnedInitialContext(wrapped);
+  const pinnedSet = new Set<number>(pinned.lines);
+  const candidates = responseItems.filter((l) => !pinnedSet.has(l.line));
+
+  return { wrapped, responseItems, pinned, candidates };
+}
+
 export function compactCodexSession(
   session: CodexSession,
   amount: CountOrPercent,
@@ -186,11 +238,7 @@ export function compactCodexSession(
 
   const changes: Change[] = [];
 
-  const wrapped = session.lines.filter((l): l is CodexWrappedLine => l.kind === "wrapped");
-  const responseItems = wrapped.filter((l) => l.type === "response_item" && isJsonObject(l.payload));
-  const pinned = findPinnedInitialContext(responseItems);
-  const pinnedSet = new Set<number>(pinned.lines);
-  const candidates = responseItems.filter((l) => !pinnedSet.has(l.line));
+  const { wrapped, responseItems, pinned, candidates } = getCodexCompactionParts(session);
 
   let removeCount = 0;
   if (keepLast) {
