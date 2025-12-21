@@ -39,9 +39,74 @@ function getToolResultTokenSegments(content: unknown): string[] {
       segments.push("[image]\n");
       continue;
     }
+
+    if (type === "json") {
+      if ("json" in p) {
+        try {
+          segments.push(JSON.stringify(p.json) + "\n");
+        } catch {
+          // ignore
+        }
+      }
+      continue;
+    }
   }
 
   return segments;
+}
+
+function hasToolResultBlock(content: unknown): boolean {
+  if (!Array.isArray(content)) return false;
+  for (const block of content) {
+    if (typeof block !== "object" || block === null) continue;
+    const b = block as Record<string, unknown>;
+    if (asString(b.type) === "tool_result") return true;
+  }
+  return false;
+}
+
+function getToolUseResultTokenSegments(toolUseResult: unknown): string[] {
+  if (toolUseResult === undefined || toolUseResult === null) return [];
+  if (typeof toolUseResult === "string") return [ensureTrailingNewline(toolUseResult)];
+
+  if (Array.isArray(toolUseResult)) {
+    const segments: string[] = [];
+    for (const part of toolUseResult) {
+      if (typeof part !== "object" || part === null) continue;
+      const p = part as Record<string, unknown>;
+      const type = asString(p.type);
+      if (type === "text") {
+        const text = asString(p.text);
+        if (!text) continue;
+        segments.push(ensureTrailingNewline(text));
+        continue;
+      }
+      if (type === "image") {
+        segments.push("[image]\n");
+        continue;
+      }
+    }
+    return segments;
+  }
+
+  if (typeof toolUseResult === "object") {
+    const obj = toolUseResult as Record<string, unknown>;
+
+    const content = asString(obj.content);
+    if (content) return [ensureTrailingNewline(content)];
+
+    const text = asString(obj.text);
+    if (text) return [ensureTrailingNewline(text)];
+
+    const file = obj.file;
+    if (typeof file === "object" && file !== null) {
+      const fileObj = file as Record<string, unknown>;
+      const fileContent = asString(fileObj.content);
+      if (fileContent) return [ensureTrailingNewline(fileContent)];
+    }
+  }
+
+  return [];
 }
 
 function countTokensForClaudeMessage(entry: ClaudeEntryLine, tokenizer: Tokenizer): number {
@@ -55,12 +120,18 @@ function countTokensForClaudeMessage(entry: ClaudeEntryLine, tokenizer: Tokenize
   const content = msgObj.content;
 
   if (typeof content === "string") {
-    return countTokensWithTokenizer(tokenizer, content.endsWith("\n") ? content : `${content}\n`);
+    let tokens = countTokensWithTokenizer(tokenizer, content.endsWith("\n") ? content : `${content}\n`);
+    // Some tool results (notably MCP) are stored on the entry as `toolUseResult` instead of in message.content.
+    for (const segment of getToolUseResultTokenSegments(entry.value.toolUseResult)) {
+      tokens += countTokensWithTokenizer(tokenizer, segment);
+    }
+    return tokens;
   }
 
   if (!Array.isArray(content)) return 0;
 
   let tokens = 0;
+  const sawToolResult = hasToolResultBlock(content);
 
   for (const block of content) {
     if (typeof block !== "object" || block === null) continue;
@@ -86,6 +157,12 @@ function countTokensForClaudeMessage(entry: ClaudeEntryLine, tokenizer: Tokenize
         tokens += countTokensWithTokenizer(tokenizer, segment);
       }
       continue;
+    }
+  }
+
+  if (!sawToolResult) {
+    for (const segment of getToolUseResultTokenSegments(entry.value.toolUseResult)) {
+      tokens += countTokensWithTokenizer(tokenizer, segment);
     }
   }
 
@@ -163,7 +240,11 @@ export async function planClaudeRemovalByTokens(params: {
     if (typeof content === "string") {
       const s = ensureTrailingNewline(content);
       messageTokens += s.length === 0 ? 0 : await countFn(s);
+      for (const segment of getToolUseResultTokenSegments(entry.value.toolUseResult)) {
+        messageTokens += segment.length === 0 ? 0 : await countFn(segment);
+      }
     } else if (Array.isArray(content)) {
+      const sawToolResult = hasToolResultBlock(content);
       for (const block of content) {
         if (typeof block !== "object" || block === null) continue;
         const b = block as Record<string, unknown>;
@@ -182,6 +263,11 @@ export async function planClaudeRemovalByTokens(params: {
           for (const segment of getToolResultTokenSegments(b.content)) {
             messageTokens += await countFn(segment);
           }
+        }
+      }
+      if (!sawToolResult) {
+        for (const segment of getToolUseResultTokenSegments(entry.value.toolUseResult)) {
+          messageTokens += segment.length === 0 ? 0 : await countFn(segment);
         }
       }
     }

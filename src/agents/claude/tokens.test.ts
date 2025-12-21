@@ -117,6 +117,61 @@ describe("agents/claude/tokens countClaudeMessagesTokens", () => {
     expect(total).toBeLessThanOrEqual(expected + 50);
   });
 
+  it("counts toolUseResult when there is no tool_result block", async () => {
+    const values = [
+      {
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        sessionId: "s1",
+        timestamp: "2025-12-18T00:00:00Z",
+        message: { role: "user", content: "hi" },
+        toolUseResult: [{ type: "text", text: "TOOL OUT" }],
+      },
+      {
+        type: "assistant",
+        uuid: "a1",
+        parentUuid: "u1",
+        sessionId: "s1",
+        timestamp: "2025-12-18T00:00:01Z",
+        message: { role: "assistant", content: [{ type: "text", text: "ok" }] },
+      },
+    ];
+
+    const parsed = parseClaudeSessionFromValues("/tmp/session.jsonl", values);
+    if (!parsed.session) throw new Error("Expected session");
+
+    const total = await countClaudeMessagesTokens(parsed.session);
+    const expected = countTokens("hi\n") + countTokens("TOOL OUT\n") + countTokens("ok\n");
+    expect(total).toBeGreaterThanOrEqual(expected);
+    expect(total).toBeLessThanOrEqual(expected + 50);
+  });
+
+  it("does not double-count toolUseResult when tool_result is present", async () => {
+    const values = [
+      {
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        sessionId: "s1",
+        timestamp: "2025-12-18T00:00:00Z",
+        message: {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "t1", content: "RESULT" }],
+        },
+        toolUseResult: [{ type: "text", text: "RESULT" }],
+      },
+    ];
+
+    const parsed = parseClaudeSessionFromValues("/tmp/session.jsonl", values);
+    if (!parsed.session) throw new Error("Expected session");
+
+    const total = await countClaudeMessagesTokens(parsed.session);
+    const expected = countTokens("RESULT");
+    expect(total).toBeGreaterThanOrEqual(expected);
+    expect(total).toBeLessThanOrEqual(expected + 50);
+  });
+
   it("counts only the reachable parentUuid chain (Claude Code style)", async () => {
     const values = [
       // Unreachable segment (not linked from the last entry)
