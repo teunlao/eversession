@@ -44,6 +44,79 @@ describe("agents/claude/tokens countClaudeMessagesTokens", () => {
     expect(total).toBeLessThanOrEqual(expected + 50);
   });
 
+  it("does not explode on tool_result image base64 payloads", async () => {
+    const base64 = "A".repeat(50_000);
+
+    const values = [
+      {
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        sessionId: "s1",
+        timestamp: "2025-12-18T00:00:00Z",
+        message: { role: "user", content: "hi" },
+      },
+      {
+        type: "assistant",
+        uuid: "a1",
+        parentUuid: "u1",
+        sessionId: "s1",
+        timestamp: "2025-12-18T00:00:01Z",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "text", text: "ok" },
+            {
+              type: "tool_result",
+              tool_use_id: "t1",
+              content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: base64 } }],
+            },
+          ],
+        },
+      },
+    ];
+
+    const parsed = parseClaudeSessionFromValues("/tmp/session.jsonl", values);
+    if (!parsed.session) throw new Error("Expected session");
+
+    const total = await countClaudeMessagesTokens(parsed.session);
+    const expected = countTokens("hi\n") + countTokens("ok\n") + countTokens("[image]\n");
+    expect(total).toBeGreaterThanOrEqual(expected);
+    expect(total).toBeLessThanOrEqual(expected + 50);
+  });
+
+  it("counts text parts inside tool_result content arrays", async () => {
+    const values = [
+      {
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        sessionId: "s1",
+        timestamp: "2025-12-18T00:00:00Z",
+        message: { role: "user", content: "hi" },
+      },
+      {
+        type: "assistant",
+        uuid: "a1",
+        parentUuid: "u1",
+        sessionId: "s1",
+        timestamp: "2025-12-18T00:00:01Z",
+        message: {
+          role: "assistant",
+          content: [{ type: "tool_result", tool_use_id: "t1", content: [{ type: "text", text: "HELLO" }] }],
+        },
+      },
+    ];
+
+    const parsed = parseClaudeSessionFromValues("/tmp/session.jsonl", values);
+    if (!parsed.session) throw new Error("Expected session");
+
+    const total = await countClaudeMessagesTokens(parsed.session);
+    const expected = countTokens("hi\n") + countTokens("HELLO\n");
+    expect(total).toBeGreaterThanOrEqual(expected);
+    expect(total).toBeLessThanOrEqual(expected + 50);
+  });
+
   it("counts only the reachable parentUuid chain (Claude Code style)", async () => {
     const values = [
       // Unreachable segment (not linked from the last entry)

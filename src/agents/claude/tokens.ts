@@ -16,6 +16,34 @@ function countTokensWithTokenizer(tokenizer: Tokenizer, text: string): number {
   return tokenizer.encode(text.normalize("NFKC"), "all").length;
 }
 
+function getToolResultTokenSegments(content: unknown): string[] {
+  if (typeof content === "string") return [content];
+  if (!Array.isArray(content)) return [];
+
+  const segments: string[] = [];
+  for (const part of content) {
+    if (typeof part !== "object" || part === null) continue;
+    const p = part as Record<string, unknown>;
+    const type = asString(p.type);
+
+    if (type === "text") {
+      const text = asString(p.text);
+      if (!text) continue;
+      segments.push(ensureTrailingNewline(text));
+      continue;
+    }
+
+    if (type === "image") {
+      // Claude Code `/context → Messages` token usage does not scale with base64 payload size.
+      // Represent images as a tiny placeholder to avoid runaway counts.
+      segments.push("[image]\n");
+      continue;
+    }
+  }
+
+  return segments;
+}
+
 function countTokensForClaudeMessage(entry: ClaudeEntryLine, tokenizer: Tokenizer): number {
   const entryType = asString(entry.value.type);
   if (entryType !== "user" && entryType !== "assistant") return 0;
@@ -54,8 +82,10 @@ function countTokensForClaudeMessage(entry: ClaudeEntryLine, tokenizer: Tokenize
     }
 
     if (t === "tool_result") {
-      const resultContent = typeof b.content === "string" ? b.content : JSON.stringify(b.content);
-      tokens += countTokensWithTokenizer(tokenizer, resultContent);
+      for (const segment of getToolResultTokenSegments(b.content)) {
+        tokens += countTokensWithTokenizer(tokenizer, segment);
+      }
+      continue;
     }
   }
 
@@ -149,8 +179,9 @@ export async function planClaudeRemovalByTokens(params: {
           messageTokens += await countFn(`[tool: ${name}]\n`);
           if ("input" in b) messageTokens += await countFn(JSON.stringify(b.input) + "\n");
         } else if (t === "tool_result") {
-          const resultContent = typeof b.content === "string" ? b.content : JSON.stringify(b.content);
-          messageTokens += await countFn(resultContent);
+          for (const segment of getToolResultTokenSegments(b.content)) {
+            messageTokens += await countFn(segment);
+          }
         }
       }
     }
