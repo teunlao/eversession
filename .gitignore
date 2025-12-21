@@ -10,6 +10,7 @@ test-sessions/
 .evs.statusline.stdin.jsonl
 .artifacts
 .shinra
+external/
 CLAUDE.md
 AGENTS.md
 .claude
