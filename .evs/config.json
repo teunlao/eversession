@@ -5,7 +5,7 @@
     "reload": "manual",
     "autoCompact": {
       "enabled": true,
-      "threshold": "140k",
+      "threshold": "100k",
       "amountTokens": "40%",
       "amountMessages": "25%",
       "model": "haiku",

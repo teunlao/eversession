@@ -6,7 +6,10 @@ import { registerClaudeSupervisorCommand } from "./commands/claude.js";
 import { registerCompactCommand } from "./commands/compact.js";
 import { registerConfigCommand } from "./commands/config.js";
 import { registerCodexCommand } from "./commands/codex.js";
+import { registerCleanupCommand } from "./commands/cleanup.js";
 import { registerForkCommand } from "./commands/fork.js";
+import { registerHookEnvCommand } from "./commands/hook-env.js";
+import { registerInfoCommand } from "./commands/info.js";
 import { registerInstallCommand } from "./commands/install.js";
 import { registerLintCommand } from "./commands/lint.js";
 import { registerLogCommand } from "./commands/log.js";
@@ -15,6 +18,7 @@ import { registerRemoveCommand } from "./commands/remove.js";
 import { registerSessionCommand } from "./commands/session.js";
 import { registerSessionStartCommand } from "./commands/session-start.js";
 import { registerStatuslineCommand } from "./commands/statusline.js";
+import { registerStudioCommand } from "./commands/studio.js";
 import { registerUninstallCommand } from "./commands/uninstall.js";
 
 function hasErrorCode(err: unknown): err is { code: unknown } {
@@ -54,6 +58,8 @@ registerAnalyzeCommand(program);
 registerLintCommand(program);
 registerCompactCommand(program);
 registerRemoveCommand(program);
+registerCleanupCommand(program);
+registerStudioCommand(program);
 registerForkCommand(program);
 registerPinCommand(program);
 
@@ -61,6 +67,8 @@ registerPinCommand(program);
 registerAutoCompactCommand(program);
 registerSessionStartCommand(program);
 registerStatuslineCommand(program);
+registerHookEnvCommand(program);
+registerInfoCommand(program);
 
 program.parseAsync(process.argv).catch((err: unknown) => {
   const message = err instanceof Error ? (err.stack ?? err.message) : String(err);

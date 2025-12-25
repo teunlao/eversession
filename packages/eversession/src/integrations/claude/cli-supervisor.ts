@@ -3,6 +3,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 
+import { removeActiveRunRecord, writeActiveRunRecord } from "../../core/active-run-registry.js";
 import { fileExists } from "../../core/fs.js";
 import { expandHome } from "../../core/paths.js";
 import { stripClaudeSessionSelectionArgs } from "./args.js";
@@ -55,18 +56,33 @@ export async function executeClaudeSupervisorCommand(params: ClaudeSupervisorCom
   const stableArgs = stripClaudeSessionSelectionArgs(initialArgs);
   const resumeArgs = (sessionId: string): string[] => ["--resume", sessionId, ...stableArgs];
 
-  const { exitCode } = await runClaudeSupervisorRunner({
-    bin,
-    initialArgs,
-    resumeArgs,
-    env: params.env,
-    controlDir,
+  await writeActiveRunRecord({
+    schemaVersion: 1,
+    agent: "claude",
     runId,
+    pid: process.pid,
+    controlDir,
+    cwd: process.cwd(),
     reloadMode,
-    pollIntervalMs: 200,
-    handshakeTimeoutMs: 5000,
-    restartTimeoutMs: 5000,
+    startedAt: new Date().toISOString(),
   });
 
-  return exitCode;
+  try {
+    const { exitCode } = await runClaudeSupervisorRunner({
+      bin,
+      initialArgs,
+      resumeArgs,
+      env: params.env,
+      controlDir,
+      runId,
+      reloadMode,
+      pollIntervalMs: 200,
+      handshakeTimeoutMs: 5000,
+      restartTimeoutMs: 5000,
+    });
+
+    return exitCode;
+  } finally {
+    await removeActiveRunRecord("claude", runId);
+  }
 }

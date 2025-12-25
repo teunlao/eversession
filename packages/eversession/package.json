@@ -1,0 +1,61 @@
+{
+  "name": "eversession",
+  "version": "0.1.0",
+  "description": "Progressive session compaction for endless Claude Code + Codex sessions.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "ai",
+    "claude",
+    "codex",
+    "cli",
+    "context",
+    "session",
+    "compaction"
+  ],
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": "./dist/index.js",
+    "./cli": "./dist/cli.js",
+    "./core/*": "./dist/core/*",
+    "./integrations/*": "./dist/integrations/*",
+    "./agents/*": "./dist/agents/*",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "evs": "dist/cli.js",
+    "eversession": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli.ts",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.1.70",
+    "@anthropic-ai/tokenizer": "0.0.4",
+    "@sveltejs/kit": "^2.22.0",
+    "commander": "^14.0.0",
+    "node-notifier": "^10.0.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.3.10",
+    "@types/node": "^24.3.0",
+    "@types/node-notifier": "^8.0.5",
+    "@vitest/coverage-v8": "^3.2.4",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

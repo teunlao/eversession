@@ -3,6 +3,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 
+import { removeActiveRunRecord, writeActiveRunRecord } from "../../core/active-run-registry.js";
 import { fileExists } from "../../core/fs.js";
 import { expandHome } from "../../core/paths.js";
 import { defaultCodexBin, findExecutableOnPath, isPathLike } from "./bin.js";
@@ -51,18 +52,33 @@ export async function executeCodexSupervisorCommand(params: CodexSupervisorComma
   const initialArgs = [...notifyOverrideArgs, ...userArgs];
   const resumeArgs = (threadId: string): string[] => [...notifyOverrideArgs, "resume", threadId];
 
-  const { exitCode } = await runCodexSupervisorRunner({
-    bin,
-    initialArgs,
-    resumeArgs,
-    env: params.env,
-    controlDir,
+  await writeActiveRunRecord({
+    schemaVersion: 1,
+    agent: "codex",
     runId,
+    pid: process.pid,
+    controlDir,
+    cwd: process.cwd(),
     reloadMode,
-    pollIntervalMs: 200,
-    handshakeTimeoutMs: 5000,
-    restartTimeoutMs: 5000,
+    startedAt: new Date().toISOString(),
   });
 
-  return exitCode;
+  try {
+    const { exitCode } = await runCodexSupervisorRunner({
+      bin,
+      initialArgs,
+      resumeArgs,
+      env: params.env,
+      controlDir,
+      runId,
+      reloadMode,
+      pollIntervalMs: 200,
+      handshakeTimeoutMs: 5000,
+      restartTimeoutMs: 5000,
+    });
+
+    return exitCode;
+  } finally {
+    await removeActiveRunRecord("codex", runId);
+  }
 }

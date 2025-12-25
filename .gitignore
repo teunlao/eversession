@@ -14,3 +14,7 @@ external/
 CLAUDE.md
 AGENTS.md
 .claude
+
+# SvelteKit (studio)
+packages/studio/.svelte-kit/
+packages/studio/build/
