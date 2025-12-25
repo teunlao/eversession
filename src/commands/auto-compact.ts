@@ -17,11 +17,37 @@ import {
   updateSessionState,
 } from "../integrations/claude/eversession-session-storage.js";
 import { readClaudeHookInputIfAny } from "../integrations/claude/hook-input.js";
-import { appendSupervisorControlCommand, readClaudeSupervisorEnv } from "../integrations/claude/supervisor-control.js";
+import {
+  appendSupervisorControlCommand,
+  readClaudeSupervisorEnv,
+  readSupervisorHandshake,
+} from "../integrations/claude/supervisor-control.js";
+import { readAutoCompactConfigFromProjectSettings } from "../integrations/claude/statusline.js";
 
 function spawnDetached(argv: string[]): void {
   const child = spawn(process.execPath, argv, { detached: true, stdio: "ignore" });
   child.unref();
+}
+
+async function resolveClaudeSessionPathForAutoCompact(params: {
+  cwd: string;
+  hookPath?: string;
+  explicitPath?: string;
+}): Promise<string | undefined> {
+  if (params.explicitPath) return params.explicitPath;
+  if (params.hookPath) return params.hookPath;
+
+  const supervisor = readClaudeSupervisorEnv();
+  if (supervisor) {
+    try {
+      const hs = await readSupervisorHandshake(supervisor.controlDir);
+      if (hs && hs.runId === supervisor.runId && hs.transcriptPath.trim().length > 0) return hs.transcriptPath;
+    } catch {
+      // ignore handshake errors
+    }
+  }
+
+  return resolveClaudeSessionPathFromInputs({ cwd: params.cwd, allowDiscover: true });
 }
 
 export function registerAutoCompactCommand(program: Command): void {
@@ -32,39 +58,69 @@ export function registerAutoCompactCommand(program: Command): void {
     .description("Start auto-compact in the background (intended for Claude hooks)")
     .option("--cwd <path>", "working directory to resolve session (default: process.cwd())")
     .option("--session <path>", "Claude session JSONL path (overrides --cwd resolution)")
-    .option("--threshold <n>", "token threshold (e.g. 140k)", "140k")
+    .option("--threshold <n>", "token threshold (e.g. 140k)")
     .option("--amount <n|%>", "amount to compact by messages (default: 25%)")
     .option("--amount-messages <n|%>", "amount to compact by messages (alias for --amount)")
     .option("--amount-tokens <n|%|k>", "amount to compact by tokens (default: 40%; e.g. 40% or 30k)")
     .option("--keep-last <n>", "keep last N messages (integer)")
-    .option("--model <model>", "haiku|sonnet|opus (default: haiku)", "haiku")
-    .option("--busy-timeout <duration>", "max time to wait on locks/file stability (default: 10s)", "10s")
+    .option("--max-tokens <n|k>", "max prompt tokens sent to the summarizer model (e.g. 32k)")
+    .option("--model <model>", "haiku|sonnet|opus (default: haiku)")
+    .option("--busy-timeout <duration>", "max time to wait on locks/file stability (default: 10s)")
     .option("--notify", "send OS notification on successful compact")
     .action(
       async (opts: {
         cwd?: string;
         session?: string;
-        threshold: string;
+        threshold?: string;
         amount?: string;
         amountMessages?: string;
         amountTokens?: string;
         keepLast?: string;
-        model: string;
-        busyTimeout: string;
+        maxTokens?: string;
+        model?: string;
+        busyTimeout?: string;
         notify?: boolean;
       }) => {
         const hook = await readClaudeHookInputIfAny(25);
         const cwd = resolveClaudeActiveCwd(opts.cwd ?? hook?.cwd);
-        const thresholdTokens = parseTokenThreshold(opts.threshold);
-        const model = isClaudeAutoCompactModel(opts.model) ? opts.model : "haiku";
-        const busyTimeoutMs = parseDurationMs(opts.busyTimeout);
+        const hookCfg = await readAutoCompactConfigFromProjectSettings(cwd);
+
+        const thresholdTokens =
+          opts.threshold !== undefined
+            ? parseTokenThreshold(opts.threshold)
+            : hookCfg?.thresholdTokens !== undefined
+              ? hookCfg.thresholdTokens
+              : parseTokenThreshold("140k");
+
+        const maxPromptTokens = opts.maxTokens
+          ? parseTokenThreshold(opts.maxTokens)
+          : hookCfg?.maxTokens
+            ? parseTokenThreshold(hookCfg.maxTokens)
+            : undefined;
+
+        const modelRaw = opts.model?.trim() ?? hookCfg?.model?.trim();
+        const model = isClaudeAutoCompactModel(modelRaw) ? modelRaw : "haiku";
+
+        const busyTimeoutMs = parseDurationMs(opts.busyTimeout?.trim() ?? hookCfg?.busyTimeout ?? "10s");
 
         const defaultAmountTokens = "40%";
         const defaultAmountMessages = "25%";
 
-        const amountTokensRaw = opts.amountTokens?.trim();
-        const amountMessagesRaw = opts.amountMessages?.trim();
-        const amountArgRaw = opts.amount?.trim();
+        const cliAmountTokensRaw = opts.amountTokens?.trim();
+        const cliAmountMessagesRaw = opts.amountMessages?.trim();
+        const cliAmountArgRaw = opts.amount?.trim();
+        const cliKeepLastRaw = opts.keepLast?.trim();
+
+        const cliSpecifiedAmount =
+          (cliAmountTokensRaw !== undefined && cliAmountTokensRaw.length > 0) ||
+          (cliAmountMessagesRaw !== undefined && cliAmountMessagesRaw.length > 0) ||
+          (cliAmountArgRaw !== undefined && cliAmountArgRaw.length > 0) ||
+          (cliKeepLastRaw !== undefined && cliKeepLastRaw.length > 0);
+
+        const amountTokensRaw = cliSpecifiedAmount ? cliAmountTokensRaw : hookCfg?.amountTokens?.trim();
+        const amountMessagesRaw = cliSpecifiedAmount ? cliAmountMessagesRaw : hookCfg?.amountMessages?.trim();
+        const amountArgRaw = cliSpecifiedAmount ? cliAmountArgRaw : hookCfg?.amount?.trim();
+        const keepLastRaw = cliSpecifiedAmount ? cliKeepLastRaw : hookCfg?.keepLast?.trim();
         if (amountTokensRaw && amountMessagesRaw) {
           process.stderr.write("[evs auto-compact] Use either --amount-messages or --amount-tokens (not both).\n");
           process.exitCode = 2;
@@ -75,19 +131,19 @@ export function registerAutoCompactCommand(program: Command): void {
           process.exitCode = 2;
           return;
         }
-        if (amountTokensRaw && opts.keepLast && opts.keepLast.trim().length > 0) {
+        if (amountTokensRaw && keepLastRaw && keepLastRaw.trim().length > 0) {
           process.stderr.write("[evs auto-compact] --amount-tokens cannot be combined with --keep-last.\n");
           process.exitCode = 2;
           return;
         }
 
-        const hasKeepLast = opts.keepLast !== undefined && opts.keepLast.trim().length > 0;
+        const hasKeepLast = keepLastRaw !== undefined && keepLastRaw.trim().length > 0;
         const amountMode: AutoCompactAmountMode =
           amountTokensRaw || (!amountMessagesRaw && !amountArgRaw && !hasKeepLast) ? "tokens" : "messages";
         const amountRaw =
           amountTokensRaw ?? (amountMode === "tokens" ? defaultAmountTokens : amountMessagesRaw ?? amountArgRaw ?? defaultAmountMessages);
 
-        const sessionPath = await resolveClaudeSessionPathFromInputs({
+        const sessionPath = await resolveClaudeSessionPathForAutoCompact({
           cwd,
           ...(hook?.transcriptPath ? { hookPath: hook.transcriptPath } : {}),
           ...(opts.session ? { explicitPath: opts.session } : {}),
@@ -132,9 +188,10 @@ export function registerAutoCompactCommand(program: Command): void {
           threshold: thresholdTokens,
           amountMode,
           amount: amountRaw,
-          keepLast: opts.keepLast ?? null,
+          keepLast: keepLastRaw ?? null,
           model,
           busyTimeoutMs,
+          ...(maxPromptTokens !== undefined ? { maxPromptTokens } : {}),
         });
 
         process.stdout.write(`[evs] auto-compact started session=${sessionId}\n`);
@@ -158,7 +215,8 @@ export function registerAutoCompactCommand(program: Command): void {
           "--busy-timeout",
           `${busyTimeoutMs}ms`,
         ];
-        if (opts.keepLast) args.push("--keep-last", opts.keepLast);
+        if (keepLastRaw) args.push("--keep-last", keepLastRaw);
+        if (maxPromptTokens !== undefined) args.push("--max-tokens", String(maxPromptTokens));
         if (opts.notify) args.push("--notify");
 
         spawnDetached(args);
@@ -170,39 +228,69 @@ export function registerAutoCompactCommand(program: Command): void {
     .description("Run auto-compact synchronously (worker)")
     .option("--cwd <path>", "working directory to resolve session (default: process.cwd())")
     .option("--session <path>", "Claude session JSONL path (overrides --cwd resolution)")
-    .option("--threshold <n>", "token threshold (e.g. 140k)", "140k")
+    .option("--threshold <n>", "token threshold (e.g. 140k)")
     .option("--amount <n|%>", "amount to compact by messages (default: 25%)")
     .option("--amount-messages <n|%>", "amount to compact by messages (alias for --amount)")
     .option("--amount-tokens <n|%|k>", "amount to compact by tokens (default: 40%; e.g. 40% or 30k)")
     .option("--keep-last <n>", "keep last N messages (integer)")
-    .option("--model <model>", "haiku|sonnet|opus (default: haiku)", "haiku")
-    .option("--busy-timeout <duration>", "max time to wait on locks/file stability (default: 10s)", "10s")
+    .option("--max-tokens <n|k>", "max prompt tokens sent to the summarizer model (e.g. 32k)")
+    .option("--model <model>", "haiku|sonnet|opus (default: haiku)")
+    .option("--busy-timeout <duration>", "max time to wait on locks/file stability (default: 10s)")
     .option("--notify", "send OS notification on successful compact")
     .action(
       async (opts: {
         cwd?: string;
         session?: string;
-        threshold: string;
+        threshold?: string;
         amount?: string;
         amountMessages?: string;
         amountTokens?: string;
         keepLast?: string;
-        model: string;
-        busyTimeout: string;
+        maxTokens?: string;
+        model?: string;
+        busyTimeout?: string;
         notify?: boolean;
       }) => {
         const hook = await readClaudeHookInputIfAny(25);
         const cwd = resolveClaudeActiveCwd(opts.cwd ?? hook?.cwd);
-        const thresholdTokens = parseTokenThreshold(opts.threshold);
-        const model = isClaudeAutoCompactModel(opts.model) ? opts.model : "haiku";
-        const busyTimeoutMs = parseDurationMs(opts.busyTimeout);
+        const hookCfg = await readAutoCompactConfigFromProjectSettings(cwd);
+
+        const thresholdTokens =
+          opts.threshold !== undefined
+            ? parseTokenThreshold(opts.threshold)
+            : hookCfg?.thresholdTokens !== undefined
+              ? hookCfg.thresholdTokens
+              : parseTokenThreshold("140k");
+
+        const maxPromptTokens = opts.maxTokens
+          ? parseTokenThreshold(opts.maxTokens)
+          : hookCfg?.maxTokens
+            ? parseTokenThreshold(hookCfg.maxTokens)
+            : undefined;
+
+        const modelRaw = opts.model?.trim() ?? hookCfg?.model?.trim();
+        const model = isClaudeAutoCompactModel(modelRaw) ? modelRaw : "haiku";
+
+        const busyTimeoutMs = parseDurationMs(opts.busyTimeout?.trim() ?? hookCfg?.busyTimeout ?? "10s");
 
         const defaultAmountTokens = "40%";
         const defaultAmountMessages = "25%";
 
-        const amountTokensRaw = opts.amountTokens?.trim();
-        const amountMessagesRaw = opts.amountMessages?.trim();
-        const amountArgRaw = opts.amount?.trim();
+        const cliAmountTokensRaw = opts.amountTokens?.trim();
+        const cliAmountMessagesRaw = opts.amountMessages?.trim();
+        const cliAmountArgRaw = opts.amount?.trim();
+        const cliKeepLastRaw = opts.keepLast?.trim();
+
+        const cliSpecifiedAmount =
+          (cliAmountTokensRaw !== undefined && cliAmountTokensRaw.length > 0) ||
+          (cliAmountMessagesRaw !== undefined && cliAmountMessagesRaw.length > 0) ||
+          (cliAmountArgRaw !== undefined && cliAmountArgRaw.length > 0) ||
+          (cliKeepLastRaw !== undefined && cliKeepLastRaw.length > 0);
+
+        const amountTokensRaw = cliSpecifiedAmount ? cliAmountTokensRaw : hookCfg?.amountTokens?.trim();
+        const amountMessagesRaw = cliSpecifiedAmount ? cliAmountMessagesRaw : hookCfg?.amountMessages?.trim();
+        const amountArgRaw = cliSpecifiedAmount ? cliAmountArgRaw : hookCfg?.amount?.trim();
+        const keepLastRaw = cliSpecifiedAmount ? cliKeepLastRaw : hookCfg?.keepLast?.trim();
         if (amountTokensRaw && amountMessagesRaw) {
           process.stderr.write("[evs auto-compact] Use either --amount-messages or --amount-tokens (not both).\n");
           process.exitCode = 2;
@@ -213,13 +301,13 @@ export function registerAutoCompactCommand(program: Command): void {
           process.exitCode = 2;
           return;
         }
-        if (amountTokensRaw && opts.keepLast && opts.keepLast.trim().length > 0) {
+        if (amountTokensRaw && keepLastRaw && keepLastRaw.trim().length > 0) {
           process.stderr.write("[evs auto-compact] --amount-tokens cannot be combined with --keep-last.\n");
           process.exitCode = 2;
           return;
         }
 
-        const hasKeepLast = opts.keepLast !== undefined && opts.keepLast.trim().length > 0;
+        const hasKeepLast = keepLastRaw !== undefined && keepLastRaw.trim().length > 0;
         const amountMode: AutoCompactAmountMode =
           amountTokensRaw || (!amountMessagesRaw && !amountArgRaw && !hasKeepLast) ? "tokens" : "messages";
         const amountRaw =
@@ -232,14 +320,15 @@ export function registerAutoCompactCommand(program: Command): void {
           amountRaw,
           model,
           busyTimeoutMs,
+          ...(maxPromptTokens !== undefined ? { maxPromptTokens } : {}),
         };
-        const sessionPath = await resolveClaudeSessionPathFromInputs({
+        const sessionPath = await resolveClaudeSessionPathForAutoCompact({
           cwd,
           ...(hook?.transcriptPath ? { hookPath: hook.transcriptPath } : {}),
           ...(opts.session ? { explicitPath: opts.session } : {}),
         });
         if (sessionPath) params.sessionPath = sessionPath;
-        if (opts.keepLast) params.keepLastRaw = opts.keepLast;
+        if (keepLastRaw) params.keepLastRaw = keepLastRaw;
         if (opts.notify) params.notify = true;
 
         const out = await runClaudeAutoCompactOnce(params);

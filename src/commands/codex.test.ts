@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerCodexCommand } from "./codex.js";
 import { discoverCodexSessionReport } from "../integrations/codex/session-discovery.js";
 import { resolveCodexConfigPath } from "../integrations/codex/config.js";
+import { getLogPath, getSessionDir } from "../integrations/claude/eversession-session-storage.js";
 
 async function runCli(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const stdoutChunks: string[] = [];
@@ -226,5 +227,77 @@ describe("cli codex install/uninstall", () => {
     const updated = await readFile(configPath, "utf8");
     expect(updated).not.toContain('notify = ["evs", "codex", "notify"]');
     expect(updated).toContain('model = "gpt-5.1"');
+  });
+});
+
+describe("cli codex auto-compact", () => {
+  const prevEnv = {
+    EVS_CODEX_CONTROL_DIR: process.env.EVS_CODEX_CONTROL_DIR,
+    EVS_CODEX_RUN_ID: process.env.EVS_CODEX_RUN_ID,
+    EVS_CODEX_RELOAD_MODE: process.env.EVS_CODEX_RELOAD_MODE,
+  };
+
+  afterEach(() => {
+    process.env.EVS_CODEX_CONTROL_DIR = prevEnv.EVS_CODEX_CONTROL_DIR;
+    process.env.EVS_CODEX_RUN_ID = prevEnv.EVS_CODEX_RUN_ID;
+    process.env.EVS_CODEX_RELOAD_MODE = prevEnv.EVS_CODEX_RELOAD_MODE;
+  });
+
+  it("infers session id + defaults from supervisor/config when omitted", async () => {
+    const root = await mkdtemp(join(tmpdir(), "evs-codex-auto-compact-cli-"));
+    const cwd = join(root, "repo");
+    await mkdir(cwd, { recursive: true });
+
+    await mkdir(join(cwd, ".evs"), { recursive: true });
+    await writeFile(
+      join(cwd, ".evs", "config.json"),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          codex: {
+            reload: "manual",
+            autoCompact: { enabled: false, threshold: "150k", amountTokens: "30%", model: "sonnet", busyTimeout: "5s" },
+          },
+        },
+        null,
+        2,
+      ) + "\n",
+      "utf8",
+    );
+
+    const codexSessionsDir = join(root, "codex-sessions");
+    const threadId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    await writeCodexSession({
+      codexSessionsDir,
+      dateDir: { yyyy: "2025", mm: "12", dd: "20" },
+      id: threadId,
+      cwd,
+    });
+
+    const controlDir = join(root, "control");
+    await mkdir(controlDir, { recursive: true });
+    process.env.EVS_CODEX_CONTROL_DIR = controlDir;
+    process.env.EVS_CODEX_RUN_ID = "run-1";
+    process.env.EVS_CODEX_RELOAD_MODE = "manual";
+    await writeFile(
+      join(controlDir, "handshake.json"),
+      JSON.stringify({ runId: "run-1", threadId, cwd, ts: new Date().toISOString() }, null, 2),
+      "utf8",
+    );
+
+    try {
+      const res = await runCli(["codex", "auto-compact", "run", "--cwd", cwd, "--codex-sessions-dir", codexSessionsDir]);
+      expect(res.exitCode).toBe(0);
+
+      const raw = await readFile(getLogPath(threadId), "utf8");
+      const lines = raw.trim().split("\n");
+      const last = JSON.parse(lines[lines.length - 1] ?? "{}") as Record<string, unknown>;
+      expect(last.result).toBe("not_triggered");
+      expect(last.threshold).toBe(150_000);
+      expect(last.amountMode).toBe("tokens");
+      expect(last.amount).toBe("30%");
+    } finally {
+      await rm(getSessionDir(threadId), { recursive: true, force: true });
+    }
   });
 });

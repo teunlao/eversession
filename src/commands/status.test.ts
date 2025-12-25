@@ -71,7 +71,11 @@ describe("cli status", () => {
           type: "event_msg",
           payload: {
             type: "token_count",
-            info: { total_token_usage: { total_tokens: 22_749 }, model_context_window: 258_400 },
+            info: {
+              total_token_usage: { total_tokens: 22_749 },
+              last_token_usage: { total_tokens: 22_749 },
+              model_context_window: 258_400,
+            },
             rate_limits: null,
           },
         }),
@@ -100,6 +104,216 @@ describe("cli status", () => {
     expect(res.stdout).toBe("EVS: Waiting 23k/100k [█▒▒▒▒▒▒▒]\n");
   });
 
+  it("uses EVS project config (codex.autoCompact.threshold) for Codex status", async () => {
+    const base = await mkdtemp(join(tmpdir(), "evs-status-"));
+    const cwd = join(base, "proj");
+    await mkdir(join(cwd, ".evs"), { recursive: true });
+    await writeFile(
+      join(cwd, ".evs", "config.json"),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          codex: {
+            autoCompact: {
+              enabled: true,
+              threshold: "20%",
+            },
+          },
+        },
+        null,
+        2,
+      ) + "\n",
+      "utf8",
+    );
+
+    const codexSessionsDir = join(base, "codex-sessions");
+    const { yyyy, mm, dd } = todayYyyyMmDd();
+    const dayDir = join(codexSessionsDir, yyyy, mm, dd);
+    await mkdir(dayDir, { recursive: true });
+
+    const id = "44444444-4444-4444-4444-444444444444";
+    const srcPath = join(dayDir, `rollout-2025-01-01T00-00-00-${id}.jsonl`);
+    const ts = "2025-01-01T00:00:00Z";
+    await writeFile(
+      srcPath,
+      [
+        JSON.stringify({ timestamp: ts, type: "session_meta", payload: { id, timestamp: ts, cwd } }),
+        JSON.stringify({
+          timestamp: ts,
+          type: "event_msg",
+          payload: {
+            type: "token_count",
+            info: {
+              total_token_usage: { total_tokens: 31_000 },
+              last_token_usage: { total_tokens: 31_000 },
+              model_context_window: 258_400,
+            },
+            rate_limits: null,
+          },
+        }),
+      ].join("\n") + "\n",
+      "utf8",
+    );
+
+    const res = await runStatus([
+      "status",
+      "--agent",
+      "codex",
+      "--cwd",
+      cwd,
+      "--codex-sessions-dir",
+      codexSessionsDir,
+      "--lookback-days",
+      "30",
+    ]);
+
+    expect(res.exitCode).toBe(0);
+    expect(res.stderr).toBe("");
+    expect(res.stdout).toBe("EVS: Waiting 31k/52k [████▒▒▒▒]\n");
+  });
+
+  it("prefers last_token_usage.total_tokens over total_token_usage.total_tokens", async () => {
+    const base = await mkdtemp(join(tmpdir(), "evs-status-"));
+    const cwd = join(base, "proj");
+    await mkdir(join(cwd, ".evs"), { recursive: true });
+    await writeFile(
+      join(cwd, ".evs", "config.json"),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          codex: {
+            autoCompact: {
+              enabled: true,
+              threshold: "20%",
+            },
+          },
+        },
+        null,
+        2,
+      ) + "\n",
+      "utf8",
+    );
+
+    const codexSessionsDir = join(base, "codex-sessions");
+    const { yyyy, mm, dd } = todayYyyyMmDd();
+    const dayDir = join(codexSessionsDir, yyyy, mm, dd);
+    await mkdir(dayDir, { recursive: true });
+
+    const id = "55555555-5555-5555-5555-555555555555";
+    const srcPath = join(dayDir, `rollout-2025-01-01T00-00-00-${id}.jsonl`);
+    const ts = "2025-01-01T00:00:00Z";
+    await writeFile(
+      srcPath,
+      [
+        JSON.stringify({ timestamp: ts, type: "session_meta", payload: { id, timestamp: ts, cwd } }),
+        JSON.stringify({
+          timestamp: ts,
+          type: "event_msg",
+          payload: {
+            type: "token_count",
+            info: {
+              total_token_usage: { total_tokens: 90_000 },
+              last_token_usage: { total_tokens: 26_500 },
+              model_context_window: 258_400,
+            },
+            rate_limits: null,
+          },
+        }),
+      ].join("\n") + "\n",
+      "utf8",
+    );
+
+    const res = await runStatus([
+      "status",
+      "--agent",
+      "codex",
+      "--cwd",
+      cwd,
+      "--codex-sessions-dir",
+      codexSessionsDir,
+      "--lookback-days",
+      "30",
+    ]);
+
+    expect(res.exitCode).toBe(0);
+    expect(res.stderr).toBe("");
+    expect(res.stdout).toBe("EVS: Waiting 27k/52k [████▒▒▒▒]\n");
+  });
+
+  it("uses estimated tokens when token_count is older than the last compaction", async () => {
+    const base = await mkdtemp(join(tmpdir(), "evs-status-"));
+    const cwd = join(base, "proj");
+    await mkdir(join(cwd, ".evs"), { recursive: true });
+    await writeFile(
+      join(cwd, ".evs", "config.json"),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          codex: {
+            autoCompact: {
+              enabled: true,
+              threshold: "20%",
+            },
+          },
+        },
+        null,
+        2,
+      ) + "\n",
+      "utf8",
+    );
+
+    const codexSessionsDir = join(base, "codex-sessions");
+    const { yyyy, mm, dd } = todayYyyyMmDd();
+    const dayDir = join(codexSessionsDir, yyyy, mm, dd);
+    await mkdir(dayDir, { recursive: true });
+
+    const id = "66666666-6666-6666-6666-666666666666";
+    const srcPath = join(dayDir, `rollout-2025-01-01T00-00-00-${id}.jsonl`);
+    await writeFile(
+      srcPath,
+      [
+        JSON.stringify({ timestamp: "2025-01-01T00:00:00Z", type: "session_meta", payload: { id, timestamp: "2025-01-01T00:00:00Z", cwd } }),
+        JSON.stringify({
+          timestamp: "2025-01-01T00:00:01Z",
+          type: "event_msg",
+          payload: {
+            type: "token_count",
+            info: {
+              total_token_usage: { total_tokens: 90_000 },
+              last_token_usage: { total_tokens: 90_000 },
+              model_context_window: 258_400,
+            },
+            rate_limits: null,
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2025-01-01T00:00:10Z",
+          type: "compacted",
+          payload: { message: "compacted", replacement_history: [] },
+        }),
+      ].join("\n") + "\n",
+      "utf8",
+    );
+
+    const res = await runStatus([
+      "status",
+      "--agent",
+      "codex",
+      "--cwd",
+      cwd,
+      "--codex-sessions-dir",
+      codexSessionsDir,
+      "--lookback-days",
+      "30",
+      "--bar-width",
+      "8",
+    ]);
+
+    expect(res.exitCode).toBe(0);
+    expect(res.stderr).toBe("");
+    expect(res.stdout).toBe("EVS: Waiting ~0/52k [▒▒▒▒▒▒▒▒]\n");
+  });
+
   it("auto mode prefers Codex when no Claude execution context exists", async () => {
     const base = await mkdtemp(join(tmpdir(), "evs-status-"));
     const cwd = join(base, "proj");
@@ -122,7 +336,11 @@ describe("cli status", () => {
           type: "event_msg",
           payload: {
             type: "token_count",
-            info: { total_token_usage: { total_tokens: 110_000 }, model_context_window: 258_400 },
+            info: {
+              total_token_usage: { total_tokens: 110_000 },
+              last_token_usage: { total_tokens: 110_000 },
+              model_context_window: 258_400,
+            },
             rate_limits: null,
           },
         }),

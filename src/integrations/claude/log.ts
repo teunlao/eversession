@@ -4,6 +4,8 @@ export type AutoCompactLogEntry = {
   ts?: string;
   event?: string;
   result?: string;
+  stage?: string;
+  error?: string;
   amountMode?: string;
   amount?: unknown;
   keepLast?: unknown;
@@ -33,6 +35,15 @@ function formatAmount(value: unknown): string | undefined {
   }
 }
 
+function formatError(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const cleaned = value.replace(/\s+/g, " ").trim();
+  if (cleaned.length === 0) return undefined;
+  const maxLen = 1000;
+  const truncated = cleaned.length > maxLen ? `${cleaned.slice(0, maxLen - 1)}…` : cleaned;
+  return JSON.stringify(truncated);
+}
+
 function parseAutoCompactEntry(line: string): AutoCompactLogEntry | undefined {
   try {
     const obj: unknown = JSON.parse(line);
@@ -45,6 +56,18 @@ function parseAutoCompactEntry(line: string): AutoCompactLogEntry | undefined {
     if (event) entry.event = event;
     const result = asString(obj.result);
     if (result) entry.result = result;
+    const stage = asString(obj.stage);
+    if (stage) entry.stage = stage;
+    if ("error" in obj) {
+      if (typeof obj.error === "string") entry.error = obj.error;
+      else {
+        try {
+          entry.error = JSON.stringify(obj.error);
+        } catch {
+          entry.error = String(obj.error);
+        }
+      }
+    }
     const amountMode = asString(obj.amountMode);
     if (amountMode) entry.amountMode = amountMode;
     if ("amount" in obj) entry.amount = obj.amount;
@@ -75,6 +98,8 @@ export function parseClaudeAutoCompactEntries(raw: string): AutoCompactLogEntry[
 export function formatClaudeAutoCompactLine(entry: AutoCompactLogEntry): string {
   const ts = entry.ts ?? "?";
   const result = entry.result ?? "?";
+  const stage = entry.stage;
+  const error = formatError(entry.error);
   const tokens = formatK(entry.tokens);
   const tokensAfter =
     entry.tokensAfter === undefined ? "" : entry.tokensAfter === null ? "->?" : `->${formatK(entry.tokensAfter)}`;
@@ -89,5 +114,7 @@ export function formatClaudeAutoCompactLine(entry: AutoCompactLogEntry): string 
   if (amountMode) parts.push(`mode=${amountMode}`);
   if (keepLast) parts.push(`keepLast=${keepLast}`);
   if (model) parts.push(`model=${model}`);
+  if (stage) parts.push(`stage=${stage}`);
+  if (error) parts.push(`error=${error}`);
   return parts.join(" ");
 }

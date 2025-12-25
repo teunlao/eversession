@@ -9,11 +9,11 @@ EverSession is built around one idea:
 ## How it works (wireframe)
 
 ```text
-Threshold = 100k (Messages)
+Threshold = 100k tokens (Claude: /context → Messages)
 
    ┌──────────────────────────────────────────────────────────────┐
    │ EVS status (optional)                                        │
-   │ Waiting 97k/100k  [███████████████████████▒▒]                │
+   │ Waiting 97k/100k  [███████▒]                                 │
    └──────────────────────────────────────────────────────────────┘
                  │ threshold reached
                  v
@@ -47,11 +47,11 @@ Threshold = 100k (Messages)
 
 ## Why you want it
 
-- **Automatic compaction** — keep sessions under the *Messages* token budget without manual `/compact`.
+- **Automatic compaction** — keep sessions under the token budget without manual `/compact`.
 - **Relevant context** — the thread stays coherent because EVS preserves structure and injects a summary.
 - **Safe by default** — backups + atomic writes + locks/guards to avoid losing data.
 
-Current focus is Claude Code.
+Claude Code is the primary focus. Codex support is early/experimental.
 
 ## Install
 
@@ -123,17 +123,101 @@ The default hook installed by `evs hooks install` looks like this:
 ```json
 {
   "type": "command",
-  "command": "evs auto-compact start --threshold 140k --amount 25% --model haiku --busy-timeout 10s --notify",
+  "command": "evs auto-compact start --threshold 140k --amount-tokens 40% --model haiku --busy-timeout 10s --notify",
   "timeout": 90
 }
 ```
 
-Change `--threshold`, `--amount` (or `--amount-tokens`), and `--model` to match your workflow.
+Change `--threshold`, `--amount-tokens`, and `--model` to match your workflow. Use `--amount-messages` for message-based removal.
 
 ## Token counting scope (important)
 
 EVS targets Claude Code `/context → Messages` tokens (the visible message chain).  
 It does not measure the full runtime/system context used by Claude Code.
+
+## Codex (experimental)
+
+### Project defaults (.evs/config.json)
+
+To avoid repeating flags, create a project config (and edit it anytime):
+
+```bash
+evs config init
+```
+
+This writes `.evs/config.json`. Defaults (example):
+
+```json
+{
+  "schemaVersion": 1,
+  "codex": {
+    "reload": "auto",
+    "autoCompact": {
+      "enabled": true,
+      "threshold": "70%",
+      "amountTokens": "40%",
+      "model": "haiku",
+      "busyTimeout": "10s"
+    }
+  }
+}
+```
+
+Remove it anytime:
+
+```bash
+evs config remove
+```
+
+### Recommended: run Codex supervised (reload + safe apply)
+
+```bash
+evs codex
+# or:
+evs codex --reload auto
+```
+
+If `codex` is not on your `PATH`, point EVS to the executable:
+
+```bash
+EVS_CODEX_BIN=/path/to/codex evs codex --reload auto
+```
+
+Notes:
+
+- `evs codex` launches Codex but injects the `notify` hook via `--config ...` (no edits to `~/.codex/config.toml`).
+- Auto-compact is computed after turns and applied only at the reload boundary, then Codex resumes the same thread.
+
+Manual reload (works in both Claude and Codex contexts):
+
+```bash
+evs reload
+```
+
+### Optional: install `notify` when running Codex directly
+
+If you run Codex directly (without `evs codex`), install the notify hook once so EVS can resolve the active session:
+
+```bash
+evs codex install
+# If you already have `notify = ...` configured:
+evs codex install --force
+# later:
+evs codex uninstall
+```
+
+This edits `~/.codex/config.toml` (or `$CODEX_HOME/config.toml`) and adds/removes:
+
+```toml
+notify = ["evs", "codex", "notify"]
+```
+
+Restart Codex after install/uninstall for changes to take effect.
+
+### Cleanup (optional)
+
+- Forget Codex “current session” mapping: delete `~/.claude/.eversession/codex-state.json`
+- Remove EVS logs/pending compacts for a Codex thread: delete `~/.claude/.eversession/sessions/<thread-id>/`
 
 ## Useful commands (later)
 

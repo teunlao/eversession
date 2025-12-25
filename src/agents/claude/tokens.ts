@@ -98,6 +98,15 @@ function getToolUseResultTokenSegments(toolUseResult: unknown): string[] {
     const text = asString(obj.text);
     if (text) return [ensureTrailingNewline(text)];
 
+    const stdout = asString(obj.stdout);
+    const stderr = asString(obj.stderr);
+    if (stdout || stderr) {
+      return [
+        ...(stdout ? [ensureTrailingNewline(stdout)] : []),
+        ...(stderr ? [ensureTrailingNewline(stderr)] : []),
+      ];
+    }
+
     const file = obj.file;
     if (typeof file === "object" && file !== null) {
       const fileObj = file as Record<string, unknown>;
@@ -107,6 +116,21 @@ function getToolUseResultTokenSegments(toolUseResult: unknown): string[] {
   }
 
   return [];
+}
+
+function getToolUseResultFileTokenSegments(toolUseResult: unknown): string[] {
+  if (toolUseResult === undefined || toolUseResult === null) return [];
+  if (typeof toolUseResult !== "object" || Array.isArray(toolUseResult)) return [];
+
+  const obj = toolUseResult as Record<string, unknown>;
+  const file = obj.file;
+  if (typeof file !== "object" || file === null) return [];
+
+  const fileObj = file as Record<string, unknown>;
+  const fileContent = asString(fileObj.content);
+  if (!fileContent) return [];
+
+  return [ensureTrailingNewline(fileContent)];
 }
 
 function countTokensForClaudeMessage(entry: ClaudeEntryLine, tokenizer: Tokenizer): number {
@@ -144,6 +168,17 @@ function countTokensForClaudeMessage(entry: ClaudeEntryLine, tokenizer: Tokenize
       continue;
     }
 
+    if (t === "thinking" || t === "redacted_thinking") {
+      const thinking = asString(b.thinking) ?? asString(b.text);
+      if (thinking) tokens += countTokensWithTokenizer(tokenizer, thinking.endsWith("\n") ? thinking : `${thinking}\n`);
+      continue;
+    }
+
+    if (t === "image") {
+      tokens += countTokensWithTokenizer(tokenizer, "[image]\n");
+      continue;
+    }
+
     if (t === "tool_use") {
       const name = asString(b.name);
       if (!name) continue;
@@ -162,6 +197,10 @@ function countTokensForClaudeMessage(entry: ClaudeEntryLine, tokenizer: Tokenize
 
   if (!sawToolResult) {
     for (const segment of getToolUseResultTokenSegments(entry.value.toolUseResult)) {
+      tokens += countTokensWithTokenizer(tokenizer, segment);
+    }
+  } else {
+    for (const segment of getToolUseResultFileTokenSegments(entry.value.toolUseResult)) {
       tokens += countTokensWithTokenizer(tokenizer, segment);
     }
   }
@@ -254,6 +293,11 @@ export async function planClaudeRemovalByTokens(params: {
           if (!text) continue;
           const s = ensureTrailingNewline(text);
           messageTokens += s.length === 0 ? 0 : await countFn(s);
+        } else if (t === "thinking" || t === "redacted_thinking") {
+          const thinking = asString(b.thinking) ?? asString(b.text);
+          if (!thinking) continue;
+          const s = ensureTrailingNewline(thinking);
+          messageTokens += s.length === 0 ? 0 : await countFn(s);
         } else if (t === "tool_use") {
           const name = asString(b.name);
           if (!name) continue;
@@ -267,6 +311,10 @@ export async function planClaudeRemovalByTokens(params: {
       }
       if (!sawToolResult) {
         for (const segment of getToolUseResultTokenSegments(entry.value.toolUseResult)) {
+          messageTokens += segment.length === 0 ? 0 : await countFn(segment);
+        }
+      } else {
+        for (const segment of getToolUseResultFileTokenSegments(entry.value.toolUseResult)) {
           messageTokens += segment.length === 0 ? 0 : await countFn(segment);
         }
       }

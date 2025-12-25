@@ -1,7 +1,12 @@
 import { spawn } from "node:child_process";
+import * as path from "node:path";
 import type { Command } from "commander";
 
 import { detectSession } from "../agents/detect.js";
+import { readJsonlHead } from "../agents/session-discovery/shared.js";
+import { fileExists } from "../core/fs.js";
+import { asString, isJsonObject } from "../core/json.js";
+import { getLogPath } from "../integrations/claude/eversession-session-storage.js";
 import { discoverCodexSessionReport } from "../integrations/codex/session-discovery.js";
 import { defaultCodexSessionsDir } from "../integrations/codex/paths.js";
 import { resolveClaudeSessionLogPath } from "../integrations/claude/log-paths.js";
@@ -77,12 +82,41 @@ function looksLikeJsonlPath(value: string): boolean {
   );
 }
 
+function deriveCodexSessionIdFromTranscriptPath(transcriptPath: string): string | undefined {
+  const base = path.basename(transcriptPath);
+  const match = base.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i);
+  return match?.[1];
+}
+
+async function resolveCodexSessionIdFromTranscriptPath(transcriptPath: string): Promise<string | undefined> {
+  const fromName = deriveCodexSessionIdFromTranscriptPath(transcriptPath);
+  if (fromName) return fromName;
+
+  try {
+    const { jsonObjects } = await readJsonlHead(transcriptPath, 25);
+    for (const obj of jsonObjects) {
+      if (asString(obj.type) !== "session_meta") continue;
+      const payload = obj.payload;
+      if (!isJsonObject(payload)) continue;
+      const id = asString(payload.id);
+      if (id) return id;
+    }
+  } catch {
+    // ignore
+  }
+
+  return undefined;
+}
+
 async function resolveOpenSessionPath(params: {
   agent: AgentChoice;
   idArg: string | undefined;
   cwd: string;
   codexSessionsDir: string;
-}): Promise<{ agent: "claude" | "codex"; sessionPath: string } | { error: string; exitCode: number }> {
+}): Promise<
+  { agent: "claude" | "codex"; sessionPath: string; sessionId?: string }
+  | { error: string; exitCode: number }
+> {
   const idRaw = params.idArg?.trim();
   if (idRaw && looksLikeJsonlPath(idRaw)) {
     const resolvedPath = await resolveSessionPathForCli({
@@ -105,7 +139,9 @@ async function resolveOpenSessionPath(params: {
       return { error: "[evs open] Expected a Codex session file. Re-run with --agent claude or omit --agent.", exitCode: 2 };
     }
 
-    return { agent: detected.agent, sessionPath: resolvedPath.value.sessionPath };
+    const sessionId =
+      detected.agent === "codex" ? deriveCodexSessionIdFromTranscriptPath(resolvedPath.value.sessionPath) : undefined;
+    return { agent: detected.agent, sessionPath: resolvedPath.value.sessionPath, ...(sessionId ? { sessionId } : {}) };
   }
 
   if (params.agent === "claude") {
@@ -137,7 +173,8 @@ async function resolveOpenSessionPath(params: {
         exitCode: 2,
       };
     }
-    return { agent: "codex", sessionPath: report.session.path };
+    const sessionId = report.session.id;
+    return { agent: "codex", sessionPath: report.session.path, ...(sessionId ? { sessionId } : {}) };
   }
 
   // auto
@@ -171,7 +208,7 @@ async function resolveOpenSessionPath(params: {
       };
     }
     if (claudePath) return { agent: "claude", sessionPath: claudePath };
-    if (codexPath) return { agent: "codex", sessionPath: codexPath };
+    if (codexPath) return { agent: "codex", sessionPath: codexPath, sessionId: idRaw };
   }
 
   // No id: prefer Claude only when there is explicit hook/env context.
@@ -191,7 +228,10 @@ async function resolveOpenSessionPath(params: {
     tailLines: 500,
     validate: false,
   });
-  if (codex.agent !== "unknown" && codex.confidence === "high") return { agent: "codex", sessionPath: codex.session.path };
+  if (codex.agent !== "unknown" && codex.confidence === "high") {
+    const sessionId = codex.session.id;
+    return { agent: "codex", sessionPath: codex.session.path, ...(sessionId ? { sessionId } : {}) };
+  }
 
   const claudeDiscover = await resolveSessionPathForCli({
     commandLabel: "open",
@@ -240,18 +280,29 @@ export function registerOpenCommand(program: Command): void {
       let targetPath = transcriptPath;
       if (opts.log) {
         if (resolved.agent === "codex") {
-          process.stderr.write("[evs open] --log is not supported for Codex yet.\n");
-          process.exitCode = 2;
-          return;
+          const sessionId = resolved.sessionId ?? (await resolveCodexSessionIdFromTranscriptPath(transcriptPath));
+          if (!sessionId) {
+            process.stderr.write("[evs open] Cannot determine Codex session id for --log. Pass a session id.\n");
+            process.exitCode = 2;
+            return;
+          }
+          const logPath = getLogPath(sessionId);
+          if (!(await fileExists(logPath))) {
+            process.stderr.write(`[evs open] Log not found (checked: EverSession central log).\n`);
+            process.exitCode = 2;
+            return;
+          }
+          targetPath = logPath;
+        } else {
+          const resolvedLog = await resolveClaudeSessionLogPath(transcriptPath);
+          if (!resolvedLog) {
+            const fallbackMsg = `Log not found (checked: ${transcriptPath}.evs.log and EverSession central log).\n`;
+            process.stderr.write(`[evs open] ${fallbackMsg}`);
+            process.exitCode = 2;
+            return;
+          }
+          targetPath = resolvedLog.path;
         }
-        const resolvedLog = await resolveClaudeSessionLogPath(transcriptPath);
-        if (!resolvedLog) {
-          const fallbackMsg = `Log not found (checked: ${transcriptPath}.evs.log and EverSession central log).\n`;
-          process.stderr.write(`[evs open] ${fallbackMsg}`);
-          process.exitCode = 2;
-          return;
-        }
-        targetPath = resolvedLog.path;
       }
 
       process.stdout.write(`${targetPath}\n`);

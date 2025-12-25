@@ -2,16 +2,23 @@ import { spawn } from "node:child_process";
 import type { Command } from "commander";
 
 import { parseDurationMs } from "../core/duration.js";
-import { parseTokenThreshold } from "../core/threshold.js";
 import { executeCodexSupervisorCommand } from "../integrations/codex/cli-supervisor.js";
 import { type CodexAutoCompactAmountMode, runCodexAutoCompactOnce } from "../integrations/codex/auto-compact.js";
 import { installCodexNotify, uninstallCodexNotify } from "../integrations/codex/config.js";
 import { defaultCodexSessionsDir } from "../integrations/codex/paths.js";
-import { parseCodexNotifyEvent, resolveCodexStatePath, updateCodexStateFromNotify } from "../integrations/codex/state.js";
+import { discoverCodexSessionReport } from "../integrations/codex/session-discovery.js";
+import {
+  parseCodexNotifyEvent,
+  resolveCodexStatePath,
+  resolveCodexThreadIdForCwd,
+  updateCodexStateFromNotify,
+} from "../integrations/codex/state.js";
 import { readCodexSupervisorEnv, readSupervisorHandshake, writeSupervisorHandshake } from "../integrations/codex/supervisor-control.js";
 import { isClaudeAutoCompactModel } from "../integrations/claude/auto-compact.js";
 import type { ModelType } from "../agents/claude/summary.js";
-import { parseCountOrPercent, parseTokensOrPercent } from "../core/spec.js";
+import { parseCountOrPercent, parseTokensOrPercent, type TokensOrPercent } from "../core/spec.js";
+import type { EvsProjectConfig } from "../core/project-config.js";
+import { loadEvsProjectConfig } from "../core/project-config.js";
 
 function parseNotifyArgs(args: string[]): {
   notificationJson?: string;
@@ -203,6 +210,55 @@ function spawnDetached(argv: string[]): void {
   child.unref();
 }
 
+async function tryLoadProjectConfig(cwd: string): Promise<EvsProjectConfig | undefined> {
+  try {
+    const loaded = await loadEvsProjectConfig(cwd);
+    return loaded?.config;
+  } catch {
+    return undefined;
+  }
+}
+
+async function resolveCodexSessionIdForAutoCompact(params: {
+  cwd: string;
+  codexSessionsDir: string;
+}): Promise<string | undefined> {
+  const supervisor = readCodexSupervisorEnv();
+  if (supervisor) {
+    try {
+      const hs = await readSupervisorHandshake(supervisor.controlDir);
+      if (hs && hs.runId === supervisor.runId && hs.threadId.trim().length > 0) return hs.threadId;
+    } catch {
+      // ignore handshake errors
+    }
+  }
+
+  try {
+    const statePath = resolveCodexStatePath();
+    const fromState = await resolveCodexThreadIdForCwd({ cwd: params.cwd, statePath });
+    if (fromState) return fromState;
+  } catch {
+    // ignore state errors
+  }
+
+  try {
+    const report = await discoverCodexSessionReport({
+      cwd: params.cwd,
+      codexSessionsDir: params.codexSessionsDir,
+      fallback: true,
+      lookbackDays: 14,
+      maxCandidates: 200,
+      tailLines: 500,
+      validate: false,
+    });
+    if (report.agent === "codex" && report.confidence === "high" && report.session.id) return report.session.id;
+  } catch {
+    // ignore discovery errors
+  }
+
+  return undefined;
+}
+
 async function runCodexNotify(args: string[]): Promise<void> {
   const parsedArgs = parseNotifyArgs(args);
   const notificationJson = parsedArgs.notificationJson;
@@ -273,25 +329,51 @@ async function runCodexNotify(args: string[]): Promise<void> {
     const supervisor = readCodexSupervisorEnv();
     // Safety: only do rolling compaction when Codex is supervised by EVS (safe reload boundary).
     if (supervisor) {
+      const cfg = await tryLoadProjectConfig(event.cwd);
+      const cfgCodex = cfg?.codex;
+      const cfgAuto = cfgCodex?.autoCompact;
+      if (cfgAuto?.enabled === false) {
+        process.exitCode = 0;
+        return;
+      }
+
       const cwd = event.cwd;
       const sessionId = event["thread-id"];
       const codexSessionsDir = parsedArgs.codexSessionsDir ?? defaultCodexSessionsDir();
 
       const defaultAmountTokens = "40%";
-      const amountTokensRaw = parsedArgs.amountTokens?.trim();
-      const amountMessagesRaw = parsedArgs.amountMessages?.trim();
-      const legacyAmountRaw = parsedArgs.amount?.trim();
-      if (amountTokensRaw && (amountMessagesRaw || legacyAmountRaw)) {
+      const amountTokensCli = parsedArgs.amountTokens?.trim();
+      const amountMessagesCli = parsedArgs.amountMessages?.trim();
+      const legacyAmountCli = parsedArgs.amount?.trim();
+      if (amountTokensCli && (amountMessagesCli || legacyAmountCli)) {
         // Never fail Codex notify hooks because of config errors; just skip auto-compact.
         process.stderr.write("[evs codex notify] Use either --amount-tokens or --amount-messages/--amount (not both).\n");
         process.exitCode = 0;
         return;
       }
 
-      const amountMode: CodexAutoCompactAmountMode =
-        amountTokensRaw || (!amountMessagesRaw && !legacyAmountRaw) ? "tokens" : "messages";
-      const amountRaw =
-        amountTokensRaw ?? (amountMode === "tokens" ? defaultAmountTokens : amountMessagesRaw ?? legacyAmountRaw ?? "35%");
+      let amountMode: CodexAutoCompactAmountMode;
+      let amountRaw: string;
+      if (amountTokensCli) {
+        amountMode = "tokens";
+        amountRaw = amountTokensCli;
+      } else if (amountMessagesCli || legacyAmountCli) {
+        amountMode = "messages";
+        amountRaw = amountMessagesCli ?? legacyAmountCli ?? "35%";
+      } else {
+        const amountTokensCfg = cfgAuto?.amountTokens?.trim();
+        const amountMessagesCfg = cfgAuto?.amountMessages?.trim();
+        if (amountTokensCfg) {
+          amountMode = "tokens";
+          amountRaw = amountTokensCfg;
+        } else if (amountMessagesCfg) {
+          amountMode = "messages";
+          amountRaw = amountMessagesCfg;
+        } else {
+          amountMode = "tokens";
+          amountRaw = defaultAmountTokens;
+        }
+      }
       try {
         if (amountMode === "tokens") parseTokensOrPercent(amountRaw);
         else parseCountOrPercent(amountRaw);
@@ -303,18 +385,22 @@ async function runCodexNotify(args: string[]): Promise<void> {
         return;
       }
       const modelRaw = parsedArgs.model;
-      const model: ModelType = isClaudeAutoCompactModel(modelRaw) ? modelRaw : "haiku";
+      const modelConfigured = (modelRaw ?? cfgAuto?.model)?.trim();
+      const model: ModelType = isClaudeAutoCompactModel(modelConfigured) ? modelConfigured : "haiku";
 
-      let thresholdTokens: number | undefined;
-      if (parsedArgs.threshold) {
+      const thresholdConfigured = (parsedArgs.threshold ?? cfgAuto?.threshold)?.trim();
+      const thresholdArg: string | undefined = (() => {
+        if (!thresholdConfigured) return undefined;
         try {
-          thresholdTokens = parseTokenThreshold(parsedArgs.threshold);
+          parseTokensOrPercent(thresholdConfigured);
+          return thresholdConfigured;
         } catch {
-          thresholdTokens = undefined;
+          return undefined;
         }
-      }
+      })();
 
-      const busyTimeoutMs = parsedArgs.busyTimeout ? parseDurationMs(parsedArgs.busyTimeout) : 10_000;
+      const busyTimeoutRaw = (parsedArgs.busyTimeout ?? cfgAuto?.busyTimeout)?.trim();
+      const busyTimeoutMs = busyTimeoutRaw ? parseDurationMs(busyTimeoutRaw) : 10_000;
 
       const cliPath = process.argv[1];
       if (cliPath) {
@@ -335,7 +421,7 @@ async function runCodexNotify(args: string[]): Promise<void> {
           "--busy-timeout",
           `${busyTimeoutMs}ms`,
         ];
-        if (thresholdTokens !== undefined) workerArgs.push("--threshold", String(thresholdTokens));
+        if (thresholdArg) workerArgs.push("--threshold", thresholdArg);
         spawnDetached(workerArgs);
       }
     }
@@ -570,17 +656,27 @@ async function runCodexAutoCompact(args: string[]): Promise<void> {
 
   const parsed = parseAutoCompactArgs(rest);
   const cwd = parsed.cwd ?? process.cwd();
-  const sessionId = parsed.sessionId;
+  const codexSessionsDir = parsed.codexSessionsDir ?? defaultCodexSessionsDir();
+  const cfg = await tryLoadProjectConfig(cwd);
+  const cfgAuto = cfg?.codex?.autoCompact;
+
+  const sessionId =
+    parsed.sessionId ??
+    (await resolveCodexSessionIdForAutoCompact({
+      cwd,
+      codexSessionsDir,
+    }));
   if (!sessionId) {
     process.stderr.write("[evs codex auto-compact] Missing --session-id.\n");
     process.exitCode = 2;
     return;
   }
 
-  let thresholdTokens: number | undefined;
-  if (parsed.threshold) {
+  let threshold: TokensOrPercent | undefined;
+  const thresholdRaw = parsed.threshold?.trim() ?? cfgAuto?.threshold?.trim();
+  if (thresholdRaw) {
     try {
-      thresholdTokens = parseTokenThreshold(parsed.threshold);
+      threshold = parseTokensOrPercent(thresholdRaw);
     } catch (err) {
       process.stderr.write(`[evs codex auto-compact] Invalid --threshold: ${err instanceof Error ? err.message : String(err)}\n`);
       process.exitCode = 2;
@@ -598,10 +694,28 @@ async function runCodexAutoCompact(args: string[]): Promise<void> {
     return;
   }
 
-  const amountMode: CodexAutoCompactAmountMode =
-    amountTokensRaw || (!amountMessagesRaw && !legacyAmountRaw) ? "tokens" : "messages";
-  const amountRaw =
-    amountTokensRaw ?? (amountMode === "tokens" ? defaultAmountTokens : amountMessagesRaw ?? legacyAmountRaw ?? "35%");
+  const amountTokensCfg = cfgAuto?.amountTokens?.trim();
+  const amountMessagesCfg = cfgAuto?.amountMessages?.trim();
+
+  let amountMode: CodexAutoCompactAmountMode;
+  let amountRaw: string;
+
+  if (amountTokensRaw) {
+    amountMode = "tokens";
+    amountRaw = amountTokensRaw;
+  } else if (amountMessagesRaw || legacyAmountRaw) {
+    amountMode = "messages";
+    amountRaw = amountMessagesRaw ?? legacyAmountRaw ?? "35%";
+  } else if (amountTokensCfg) {
+    amountMode = "tokens";
+    amountRaw = amountTokensCfg;
+  } else if (amountMessagesCfg) {
+    amountMode = "messages";
+    amountRaw = amountMessagesCfg;
+  } else {
+    amountMode = "tokens";
+    amountRaw = defaultAmountTokens;
+  }
   try {
     if (amountMode === "tokens") parseTokensOrPercent(amountRaw);
     else parseCountOrPercent(amountRaw);
@@ -612,16 +726,15 @@ async function runCodexAutoCompact(args: string[]): Promise<void> {
     process.exitCode = 2;
     return;
   }
-  const modelRaw = parsed.model;
+  const modelRaw = parsed.model?.trim() ?? cfgAuto?.model?.trim();
   const model: ModelType = isClaudeAutoCompactModel(modelRaw) ? modelRaw : "haiku";
-  const busyTimeoutMs = parseDurationMs(parsed.busyTimeout ?? "10s");
-  const codexSessionsDir = parsed.codexSessionsDir ?? defaultCodexSessionsDir();
+  const busyTimeoutMs = parseDurationMs(parsed.busyTimeout?.trim() ?? cfgAuto?.busyTimeout?.trim() ?? "10s");
 
   const out = await runCodexAutoCompactOnce({
     cwd,
     sessionId,
     codexSessionsDir,
-    ...(thresholdTokens !== undefined ? { thresholdTokens } : {}),
+    ...(threshold ? { threshold } : {}),
     amountMode,
     amountRaw,
     model,
@@ -664,8 +777,10 @@ export function registerCodexCommand(program: Command): void {
         return;
       }
 
+      const cfg = await tryLoadProjectConfig(process.cwd());
+      const reloadFlag = opts.reload ?? cfg?.codex?.reload;
       const exitCode = await executeCodexSupervisorCommand({
-        reloadFlag: opts.reload,
+        reloadFlag,
         args,
         env: process.env,
       });

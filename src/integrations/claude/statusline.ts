@@ -134,6 +134,7 @@ export type AutoCompactHookConfig = {
   amountTokens?: string;
   amountMessages?: string;
   keepLast?: string;
+  maxTokens?: string;
   model?: string;
   busyTimeout?: string;
 };
@@ -158,6 +159,7 @@ export async function readAutoCompactConfigFromProjectSettings(
   const amountTokens: Array<string | undefined> = [];
   const amountMessages: Array<string | undefined> = [];
   const keepLast: Array<string | undefined> = [];
+  const maxTokens: Array<string | undefined> = [];
   const models: Array<string | undefined> = [];
   const busyTimeouts: Array<string | undefined> = [];
 
@@ -184,6 +186,7 @@ export async function readAutoCompactConfigFromProjectSettings(
       amountTokens.push(parseFlagFromCommand(cmd, "amount-tokens"));
       amountMessages.push(parseFlagFromCommand(cmd, "amount-messages"));
       keepLast.push(parseFlagFromCommand(cmd, "keep-last"));
+      maxTokens.push(parseFlagFromCommand(cmd, "max-tokens"));
       models.push(parseFlagFromCommand(cmd, "model"));
       busyTimeouts.push(parseFlagFromCommand(cmd, "busy-timeout"));
     }
@@ -194,6 +197,7 @@ export async function readAutoCompactConfigFromProjectSettings(
   const amountTokensValue = uniqueStringOrUndefined(amountTokens);
   const amountMessagesValue = uniqueStringOrUndefined(amountMessages);
   const keepLastValue = uniqueStringOrUndefined(keepLast);
+  const maxTokensValue = uniqueStringOrUndefined(maxTokens);
   const model = uniqueStringOrUndefined(models);
   const busyTimeout = uniqueStringOrUndefined(busyTimeouts);
 
@@ -203,6 +207,7 @@ export async function readAutoCompactConfigFromProjectSettings(
     ...(amountTokensValue ? { amountTokens: amountTokensValue } : {}),
     ...(amountMessagesValue ? { amountMessages: amountMessagesValue } : {}),
     ...(keepLastValue ? { keepLast: keepLastValue } : {}),
+    ...(maxTokensValue ? { maxTokens: maxTokensValue } : {}),
     ...(model ? { model } : {}),
     ...(busyTimeout ? { busyTimeout } : {}),
   };

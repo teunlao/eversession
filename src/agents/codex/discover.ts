@@ -259,13 +259,15 @@ export async function discoverCodexSession(opts: DiscoverCodexOptions): Promise<
     ranked.push(item);
   }
 
-  ranked.sort((a, b) => {
+  const preferred = ranked.some((r) => r.method !== "fallback") ? ranked.filter((r) => r.method !== "fallback") : ranked;
+
+  preferred.sort((a, b) => {
     if (b.lastActivityMs !== a.lastActivityMs) return b.lastActivityMs - a.lastActivityMs;
     if (b.score !== a.score) return b.score - a.score;
     return b.mtimeMs - a.mtimeMs;
   });
 
-  const best = ranked[0];
+  const best = preferred[0];
   if (!best) return unknownReport(opts.cwd, "[Codex] Failed to rank any candidates.");
   if (!opts.fallback && best.method === "fallback")
     return unknownReport(opts.cwd, "[Codex] No rollout matched target CWD and fallback is disabled.");
@@ -284,7 +286,7 @@ export async function discoverCodexSession(opts: DiscoverCodexOptions): Promise<
   if (best.lastActivity) session.lastActivity = best.lastActivity;
   if (opts.validate) session.health = (await validateHealth(best.filePath)).health;
 
-  const alternatives: SessionAlternative[] = ranked
+  const alternatives: SessionAlternative[] = preferred
     .slice(0, 5)
     .map((r) => ({ path: r.filePath, score: r.score, reason: r.reason }));
   return { agent: "codex", cwd: opts.cwd, method: best.method, confidence, session, alternatives };

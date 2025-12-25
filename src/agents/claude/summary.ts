@@ -16,6 +16,13 @@ export interface SummaryResult {
   model: ModelType;
 }
 
+export interface SummaryPrompt {
+  prompt: string;
+  promptTokens: number;
+  sourceLines: number;
+  targetLines: number;
+}
+
 const COMPACT_PROMPT = `# Session Compact Expert
 
 ## Who you are
@@ -191,12 +198,7 @@ export function formatEntriesForPrompt(entries: ClaudeEntryLine[]): string {
   return lines.join("\n\n");
 }
 
-export async function generateClaudeSummary(
-  _session: ClaudeSession,
-  entriesToCompact: ClaudeEntryLine[],
-  options: SummaryOptions = {},
-): Promise<SummaryResult> {
-  const model = options.model ?? "haiku";
+export function buildClaudeSummaryPrompt(entriesToCompact: ClaudeEntryLine[], options: SummaryOptions = {}): SummaryPrompt {
   const targetPercent = options.targetPercent ?? 20;
 
   const formattedMessages = formatEntriesForPrompt(entriesToCompact);
@@ -204,6 +206,68 @@ export async function generateClaudeSummary(
   const targetLines = Math.max(20, Math.floor(sourceLines * (targetPercent / 100)));
 
   const prompt = buildCompactPrompt(formattedMessages, sourceLines, targetLines);
+  const promptTokens = anthropicCountTokens(prompt);
+
+  return { prompt, promptTokens, sourceLines, targetLines };
+}
+
+export function fitClaudeEntriesToMaxPromptTokens(params: {
+  entries: ClaudeEntryLine[];
+  requestedCount: number;
+  maxPromptTokens: number;
+  options?: SummaryOptions;
+}): { count: number; promptTokens: number; requestedPromptTokens: number } {
+  const requestedCount = Math.max(0, Math.min(Math.floor(params.requestedCount), params.entries.length));
+  const maxPromptTokens = Math.floor(params.maxPromptTokens);
+  const options = params.options ?? {};
+
+  const countTokensForCount = (count: number): number => {
+    const n = Math.max(0, Math.min(Math.floor(count), requestedCount));
+    return buildClaudeSummaryPrompt(params.entries.slice(0, n), options).promptTokens;
+  };
+
+  const requestedPromptTokens = countTokensForCount(requestedCount);
+  if (!Number.isFinite(maxPromptTokens) || maxPromptTokens <= 0) {
+    return { count: requestedCount, promptTokens: requestedPromptTokens, requestedPromptTokens };
+  }
+
+  if (requestedPromptTokens <= maxPromptTokens) {
+    return { count: requestedCount, promptTokens: requestedPromptTokens, requestedPromptTokens };
+  }
+
+  let low = 0;
+  let high = requestedCount;
+  let bestCount = 0;
+  let bestTokens = countTokensForCount(0);
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const tokens = countTokensForCount(mid);
+    if (tokens <= maxPromptTokens) {
+      bestCount = mid;
+      bestTokens = tokens;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  // Guard against rare non-monotonicity (e.g. metadata digit changes): ensure returned count fits.
+  while (bestCount > 0 && bestTokens > maxPromptTokens) {
+    bestCount -= 1;
+    bestTokens = countTokensForCount(bestCount);
+  }
+
+  return { count: bestCount, promptTokens: bestTokens, requestedPromptTokens };
+}
+
+export async function generateClaudeSummary(
+  _session: ClaudeSession,
+  entriesToCompact: ClaudeEntryLine[],
+  options: SummaryOptions = {},
+): Promise<SummaryResult> {
+  const model = options.model ?? "haiku";
+  const prompt = buildClaudeSummaryPrompt(entriesToCompact, options).prompt;
 
   let summary = "";
 

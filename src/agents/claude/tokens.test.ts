@@ -172,6 +172,75 @@ describe("agents/claude/tokens countClaudeMessagesTokens", () => {
     expect(total).toBeLessThanOrEqual(expected + 50);
   });
 
+  it("counts thinking blocks (Claude Code /context includes them)", async () => {
+    const values = [
+      {
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        sessionId: "s1",
+        timestamp: "2025-12-18T00:00:00Z",
+        message: { role: "user", content: "hi" },
+      },
+      {
+        type: "assistant",
+        uuid: "a1",
+        parentUuid: "u1",
+        sessionId: "s1",
+        timestamp: "2025-12-18T00:00:01Z",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "THINK", signature: "SIG" },
+            { type: "text", text: "ok" },
+          ],
+        },
+      },
+    ];
+
+    const parsed = parseClaudeSessionFromValues("/tmp/session.jsonl", values);
+    if (!parsed.session) throw new Error("Expected session");
+
+    const total = await countClaudeMessagesTokens(parsed.session);
+    const expected = countTokens("hi\n") + countTokens("THINK\n") + countTokens("ok\n");
+    expect(total).toBeGreaterThanOrEqual(expected);
+    expect(total).toBeLessThanOrEqual(expected + 50);
+  });
+
+  it("counts toolUseResult file content even when tool_result is present", async () => {
+    const values = [
+      {
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        sessionId: "s1",
+        timestamp: "2025-12-18T00:00:00Z",
+        message: {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "t1", content: "RESULT" }],
+        },
+        toolUseResult: {
+          type: "text",
+          file: {
+            filePath: "/tmp/example.txt",
+            content: "FILE CONTENT",
+            numLines: 1,
+            startLine: 1,
+            totalLines: 1,
+          },
+        },
+      },
+    ];
+
+    const parsed = parseClaudeSessionFromValues("/tmp/session.jsonl", values);
+    if (!parsed.session) throw new Error("Expected session");
+
+    const total = await countClaudeMessagesTokens(parsed.session);
+    const expected = countTokens("RESULT") + countTokens("FILE CONTENT\n");
+    expect(total).toBeGreaterThanOrEqual(expected);
+    expect(total).toBeLessThanOrEqual(expected + 50);
+  });
+
   it("counts only the reachable parentUuid chain (Claude Code style)", async () => {
     const values = [
       // Unreachable segment (not linked from the last entry)

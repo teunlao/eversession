@@ -1,10 +1,14 @@
 import type { Command } from "commander";
+import { getTokenizer } from "@anthropic-ai/tokenizer";
 
 import { parseCodexSession } from "../agents/codex/session.js";
 import type { SessionDiscoveryReport } from "../agents/session-discovery/types.js";
+import { getCodexMessageText } from "../agents/codex/text.js";
 import { printIssuesHuman } from "../core/cli.js";
 import type { Issue } from "../core/issues.js";
 import { asNumber, asString, isJsonObject } from "../core/json.js";
+import { loadEvsProjectConfig } from "../core/project-config.js";
+import { parseTokensOrPercent } from "../core/spec.js";
 import { parseTokenThreshold } from "../core/threshold.js";
 import { resolveClaudeActiveSession, toClaudeSessionDiscoveryReport } from "../integrations/claude/active-session.js";
 import { resolveClaudeProjectDirFromEnv } from "../integrations/claude/context.js";
@@ -18,6 +22,8 @@ import { lockPathForSession } from "../core/paths.js";
 import { fileExists } from "../core/fs.js";
 import { defaultCodexSessionsDir } from "../integrations/codex/paths.js";
 import { discoverCodexSessionReport } from "../integrations/codex/session-discovery.js";
+import { readCodexPendingCompact } from "../integrations/codex/pending-compact.js";
+import { defaultCodexThresholdFromContextWindow } from "../integrations/codex/auto-compact.js";
 
 type AgentChoice = "auto" | "claude" | "codex";
 
@@ -28,7 +34,7 @@ type StatusReport = {
   cwd: string;
   session: { path: string; id?: string };
   mode: StatusMode;
-  tokens?: { current?: number; threshold?: number; bar?: string };
+  tokens?: { current?: number; threshold?: number; bar?: string; currentEstimated?: true };
 };
 
 function formatK(value: number): string {
@@ -60,12 +66,13 @@ function renderStatusLine(report: StatusReport): string {
   const current = report.tokens?.current;
   const threshold = report.tokens?.threshold;
   const bar = report.tokens?.bar;
+  const currentEstimated = report.tokens?.currentEstimated === true;
 
   const tokensText =
     current !== undefined && threshold !== undefined
-      ? `${formatK(current)}/${formatK(threshold)}`
+      ? `${currentEstimated ? "~" : ""}${formatK(current)}/${formatK(threshold)}`
       : current !== undefined
-        ? `${formatK(current)}/?`
+        ? `${currentEstimated ? "~" : ""}${formatK(current)}/?`
         : threshold !== undefined
           ? `?/${formatK(threshold)}`
           : "?/?";
@@ -202,8 +209,7 @@ async function buildClaudeStatusReport(params: {
 
   const mode: StatusMode = isCompacting ? "Compacting" : needsReload ? "Reload" : "Waiting";
 
-  const displayTokens =
-    needsReload && !hasPendingReady && signals?.lastSuccess?.tokensAfter !== undefined ? signals.lastSuccess.tokensAfter : tokens;
+  const displayTokens = tokens;
 
   const bar = formatProgressBar(displayTokens, threshold, params.barWidth);
   return {
@@ -230,6 +236,7 @@ function extractCodexSessionIdFromWrapped(session: Awaited<ReturnType<typeof par
 function extractLastCodexTokenCount(session: Awaited<ReturnType<typeof parseCodexSession>>["session"]): {
   tokens?: number;
   modelContextWindow?: number;
+  timestampMs?: number;
 } {
   if (!session || session.format !== "wrapped") return {};
 
@@ -242,13 +249,129 @@ function extractLastCodexTokenCount(session: Awaited<ReturnType<typeof parseCode
 
     const info = line.payload.info;
     if (!isJsonObject(info)) continue;
+    const lastUsage = isJsonObject(info.last_token_usage) ? info.last_token_usage : undefined;
     const totalUsage = isJsonObject(info.total_token_usage) ? info.total_token_usage : undefined;
-    const tokens = totalUsage ? asNumber(totalUsage.total_tokens) : undefined;
+    const tokens =
+      (lastUsage ? asNumber(lastUsage.total_tokens) : undefined) ??
+      (totalUsage ? asNumber(totalUsage.total_tokens) : undefined);
     const modelContextWindow = asNumber(info.model_context_window);
-    if (tokens !== undefined) return { tokens, ...(modelContextWindow !== undefined ? { modelContextWindow } : {}) };
+    if (tokens !== undefined) {
+      const timestampMs = Date.parse(line.timestamp);
+      return {
+        tokens,
+        ...(modelContextWindow !== undefined ? { modelContextWindow } : {}),
+        ...(Number.isFinite(timestampMs) && timestampMs > 0 ? { timestampMs } : {}),
+      };
+    }
   }
 
   return {};
+}
+
+function maxCodexCompactedTimestampMs(session: Awaited<ReturnType<typeof parseCodexSession>>["session"]): number | undefined {
+  if (!session || session.format !== "wrapped") return undefined;
+  let max = 0;
+  for (const line of session.lines) {
+    if (line.kind !== "wrapped") continue;
+    if (line.type !== "compacted") continue;
+    const ms = Date.parse(line.timestamp);
+    if (!Number.isFinite(ms) || ms <= 0) continue;
+    if (ms > max) max = ms;
+  }
+  return max > 0 ? max : undefined;
+}
+
+type Tokenizer = ReturnType<typeof getTokenizer>;
+
+function countTokensWithTokenizer(tokenizer: Tokenizer, text: string): number {
+  if (text.length === 0) return 0;
+  return tokenizer.encode(text.normalize("NFKC"), "all").length;
+}
+
+function ensureTrailingNewline(text: string): string {
+  if (text.length === 0) return "";
+  return text.endsWith("\n") ? text : `${text}\n`;
+}
+
+function formatCodexResponseItemForEstimate(payload: Record<string, unknown>): string | undefined {
+  const t = asString(payload.type);
+  if (!t) return undefined;
+
+  if (t === "message") {
+    const role = asString(payload.role);
+    if (!role) return undefined;
+    const text = getCodexMessageText(payload).trim();
+    if (text.length === 0) return undefined;
+    return `[${role}]: ${text}`;
+  }
+
+  const callTypes = new Set(["function_call", "custom_tool_call", "local_shell_call"]);
+  if (callTypes.has(t)) {
+    const name = asString(payload.name) ?? t;
+    return `[assistant]: [tool: ${name}]\n${JSON.stringify(payload)}`;
+  }
+
+  const outputTypes = new Set(["function_call_output", "custom_tool_call_output"]);
+  if (outputTypes.has(t)) {
+    const callId = asString(payload.call_id);
+    const label = callId ? `${t} ${callId}` : t;
+    return `[assistant]: [result: ${label}]\n${JSON.stringify(payload)}`;
+  }
+
+  return undefined;
+}
+
+function estimateCodexTokensFromSession(session: Awaited<ReturnType<typeof parseCodexSession>>["session"]): number | undefined {
+  if (!session || session.format !== "wrapped") return undefined;
+
+  let tokenizer: Tokenizer | undefined;
+  try {
+    tokenizer = getTokenizer();
+  } catch {
+    return undefined;
+  }
+
+  try {
+    let total = 0;
+    for (const line of session.lines) {
+      if (line.kind !== "wrapped") continue;
+      if (line.type !== "response_item") continue;
+      if (!isJsonObject(line.payload)) continue;
+      const formatted = formatCodexResponseItemForEstimate(line.payload);
+      if (!formatted) continue;
+      total += countTokensWithTokenizer(tokenizer, ensureTrailingNewline(formatted));
+    }
+    return total;
+  } finally {
+    try {
+      tokenizer.free();
+    } catch {
+      // ignore
+    }
+  }
+}
+
+function thresholdTokensFromSpec(spec: ReturnType<typeof parseTokensOrPercent>, modelContextWindow: number | undefined): number | undefined {
+  if (spec.kind === "tokens") return spec.tokens;
+  if (modelContextWindow === undefined) return undefined;
+  if (!Number.isFinite(modelContextWindow) || modelContextWindow <= 0) return undefined;
+  const percent = spec.percent;
+  if (!Number.isFinite(percent) || percent < 0) return undefined;
+  return Math.floor((modelContextWindow * percent) / 100);
+}
+
+async function tryResolveCodexThresholdFromProjectConfig(cwd: string, modelContextWindow: number | undefined): Promise<number | undefined> {
+  try {
+    const loaded = await loadEvsProjectConfig(cwd);
+    const cfgAuto = loaded?.config.codex?.autoCompact;
+    if (cfgAuto?.enabled === false) return undefined;
+    const raw = cfgAuto?.threshold?.trim();
+    if (!raw) return undefined;
+    const spec = parseTokensOrPercent(raw);
+    return thresholdTokensFromSpec(spec, modelContextWindow);
+  } catch {
+    return undefined;
+  }
 }
 
 async function buildCodexStatusReport(params: {
@@ -261,9 +384,32 @@ async function buildCodexStatusReport(params: {
   const parsed = await parseCodexSession(params.sessionPath);
   const sessionId = params.sessionId ?? extractCodexSessionIdFromWrapped(parsed.session);
   const tokenCount = extractLastCodexTokenCount(parsed.session);
-  const threshold = params.thresholdOverride ?? tokenCount.modelContextWindow;
-  const mode = modeFromThreshold(tokenCount.tokens, threshold);
-  const bar = formatProgressBar(tokenCount.tokens, threshold, params.barWidth);
+  const thresholdFromConfig =
+    params.thresholdOverride === undefined
+      ? await tryResolveCodexThresholdFromProjectConfig(params.cwd, tokenCount.modelContextWindow)
+      : undefined;
+  const threshold = params.thresholdOverride ?? thresholdFromConfig ?? defaultCodexThresholdFromContextWindow(tokenCount.modelContextWindow);
+
+  const lastCompactedMs = maxCodexCompactedTimestampMs(parsed.session);
+  const tokenCountMs = tokenCount.timestampMs;
+  const tokensStale = lastCompactedMs !== undefined && tokenCountMs !== undefined && lastCompactedMs > tokenCountMs;
+  const estimatedTokens = tokensStale ? estimateCodexTokensFromSession(parsed.session) : undefined;
+  const displayTokens = estimatedTokens ?? tokenCount.tokens;
+
+  const lockPath = lockPathForSession(params.sessionPath);
+  const [isLock, pending] = await Promise.all([
+    fileExists(lockPath),
+    sessionId ? readCodexPendingCompact(sessionId) : Promise.resolve(undefined),
+  ]);
+
+  const overThreshold =
+    displayTokens !== undefined && threshold !== undefined ? displayTokens >= threshold : false;
+  const isCompacting = (isLock && overThreshold) || pending?.status === "running";
+  const needsReload = pending?.status === "ready";
+
+  const baseMode: StatusMode = threshold === undefined ? "Active" : overThreshold ? "Over" : "Waiting";
+  const mode: StatusMode = isCompacting ? "Compacting" : needsReload ? "Reload" : baseMode;
+  const bar = formatProgressBar(displayTokens, threshold, params.barWidth);
 
   return {
     agent: "codex",
@@ -271,9 +417,10 @@ async function buildCodexStatusReport(params: {
     session: { path: params.sessionPath, ...(sessionId ? { id: sessionId } : {}) },
     mode,
     tokens: {
-      ...(tokenCount.tokens !== undefined ? { current: tokenCount.tokens } : {}),
+      ...(displayTokens !== undefined ? { current: displayTokens } : {}),
       ...(threshold !== undefined ? { threshold } : {}),
       ...(bar ? { bar } : {}),
+      ...(displayTokens !== undefined && estimatedTokens !== undefined ? { currentEstimated: true } : {}),
     },
   };
 }

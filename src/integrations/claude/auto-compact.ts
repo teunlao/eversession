@@ -4,7 +4,7 @@ import { claudeAdapter } from "../../agents/claude/adapter.js";
 import { getChainEntries, getChainMessages, getEntryType, getUuid } from "../../agents/claude/model.js";
 import { expandToPreserveToolPairs } from "../../agents/claude/remove-utils.js";
 import type { ClaudeEntryLine } from "../../agents/claude/session.js";
-import { generateClaudeSummary, type ModelType } from "../../agents/claude/summary.js";
+import { fitClaudeEntriesToMaxPromptTokens, generateClaudeSummary, type ModelType } from "../../agents/claude/summary.js";
 import { countClaudeMessagesTokens, planClaudeRemovalByTokens } from "../../agents/claude/tokens.js";
 import { expandToFullAssistantTurns } from "../../agents/claude/turns.js";
 import { waitForStableFile } from "../../core/file-stability.js";
@@ -50,6 +50,7 @@ export type AutoCompactRunOptions = {
   amountMode: AutoCompactAmountMode;
   amountRaw: string;
   keepLastRaw?: string;
+  maxPromptTokens?: number;
   model: ModelType;
   busyTimeoutMs: number;
   notify?: boolean;
@@ -275,6 +276,50 @@ export async function runClaudeAutoCompactOnce(opts: AutoCompactRunOptions): Pro
         removeCount = Math.floor(visibleMessages.length * (amount.percent / 100));
       } else {
         removeCount = Math.min(amount.count, visibleMessages.length);
+      }
+    }
+
+    const requestedRemoveCount = removeCount;
+    const maxPromptTokens = opts.maxPromptTokens;
+    if (maxPromptTokens !== undefined && Number.isFinite(maxPromptTokens) && maxPromptTokens > 0 && removeCount > 0) {
+      const fit = fitClaudeEntriesToMaxPromptTokens({
+        entries: visibleMessages,
+        requestedCount: removeCount,
+        maxPromptTokens,
+        options: { targetPercent: 20 },
+      });
+
+      if (fit.count !== removeCount) {
+        removeCount = fit.count;
+        targetRemoveTokens = undefined;
+        selectedRemoveTokens = undefined;
+
+        if (opts.amountMode === "tokens") {
+          amount = { kind: "count", count: removeCount };
+        } else if (keepLast) {
+          amount = { kind: "count", count: Math.max(0, visibleMessages.length - removeCount) };
+        } else {
+          amount = { kind: "count", count: removeCount };
+        }
+
+        if (removeCount <= 0) {
+          const msg = `[AutoCompact] Summary prompt exceeds --max-tokens (requested=${fit.requestedPromptTokens}, max=${Math.floor(maxPromptTokens)}).`;
+          await appendSessionLog(sessionId, {
+            event: "auto_compact",
+            sessionPath,
+            result: "failed",
+            stage: "prompt_limit",
+            model: opts.model,
+            error: msg,
+            threshold: opts.thresholdTokens,
+            amountMode: opts.amountMode,
+            amount: opts.amountRaw,
+            keepLast: opts.keepLastRaw ?? null,
+            tokens,
+            requestedRemoveCount,
+          });
+          return { result: "failed", tokens, usedModel: opts.model, error: msg, sessionPath };
+        }
       }
     }
 

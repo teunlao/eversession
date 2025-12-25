@@ -23,7 +23,8 @@ describe("integrations/claude/statusline readAutoCompactConfigFromProjectSetting
             hooks: [
               {
                 type: "command",
-                command: "evs auto-compact start --threshold 140k --amount-tokens 40% --model haiku --busy-timeout 10s",
+                command:
+                  "evs auto-compact start --threshold 140k --amount-tokens 40% --max-tokens 32k --model haiku --busy-timeout 10s",
                 timeout: 90,
               },
             ],
@@ -36,6 +37,7 @@ describe("integrations/claude/statusline readAutoCompactConfigFromProjectSetting
     expect(cfg).toEqual({
       thresholdTokens: 140_000,
       amountTokens: "40%",
+      maxTokens: "32k",
       model: "haiku",
       busyTimeout: "10s",
     });

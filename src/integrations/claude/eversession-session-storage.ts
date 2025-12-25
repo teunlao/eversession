@@ -177,7 +177,8 @@ function formatTimestamp(date: Date): string {
   const hh = String(date.getHours()).padStart(2, "0");
   const mi = String(date.getMinutes()).padStart(2, "0");
   const ss = String(date.getSeconds()).padStart(2, "0");
-  return `${yyyy}${mm}${dd}-${hh}${mi}${ss}`;
+  const ms = String(date.getMilliseconds()).padStart(3, "0");
+  return `${yyyy}${mm}${dd}-${hh}${mi}${ss}-${ms}`;
 }
 
 export async function createSessionBackup(sessionId: string, sourcePath: string): Promise<string> {

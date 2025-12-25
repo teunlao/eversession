@@ -1,6 +1,7 @@
-import * as os from "node:os";
 import * as path from "node:path";
 
-export function defaultCodexSessionsDir(): string {
-  return path.join(os.homedir(), ".codex", "sessions");
+import { resolveCodexHome } from "./config.js";
+
+export function defaultCodexSessionsDir(env: NodeJS.ProcessEnv = process.env): string {
+  return path.join(resolveCodexHome(env), "sessions");
 }

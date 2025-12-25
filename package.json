@@ -1,10 +1,23 @@
 {
   "name": "eversession",
   "version": "0.1.0",
-  "description": "Progressive session compaction for endless Claude Code sessions (multi-agent ready).",
+  "description": "Progressive session compaction for endless Claude Code + Codex sessions.",
   "type": "module",
   "license": "MIT",
-  "private": true,
+  "keywords": [
+    "ai",
+    "claude",
+    "codex",
+    "cli",
+    "context",
+    "session",
+    "compaction"
+  ],
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
   "bin": {
     "evs": "dist/cli.js",
     "eversession": "dist/cli.js"

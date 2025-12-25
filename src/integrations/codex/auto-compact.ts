@@ -1,5 +1,6 @@
 import * as fs from "node:fs/promises";
 
+import { getTokenizer } from "@anthropic-ai/tokenizer";
 import { codexAdapter } from "../../agents/codex/adapter.js";
 import { compactCodexSession, getCodexCompactionParts } from "../../agents/codex/compact.js";
 import type { CodexSession, CodexWrappedLine } from "../../agents/codex/session.js";
@@ -12,9 +13,9 @@ import { asNumber, asString, isJsonObject } from "../../core/json.js";
 import { stringifyJsonl } from "../../core/jsonl.js";
 import { acquireLockWithWait } from "../../core/lock.js";
 import { lockPathForSession } from "../../core/paths.js";
-import { parseCountOrPercent, parseTokensOrPercent } from "../../core/spec.js";
+import { parseCountOrPercent, parseTokensOrPercent, type TokensOrPercent } from "../../core/spec.js";
 import { waitForStableFile } from "../../core/file-stability.js";
-import { cleanupOldBackups, createSessionBackup } from "../claude/eversession-session-storage.js";
+import { appendSessionLog, cleanupOldBackups, createSessionBackup } from "../claude/eversession-session-storage.js";
 import { appendSupervisorControlCommand, readCodexSupervisorEnv } from "./supervisor-control.js";
 import { type CodexPendingCompactSelection, clearCodexPendingCompact, readCodexPendingCompact, writeCodexPendingCompact } from "./pending-compact.js";
 
@@ -36,7 +37,7 @@ export type CodexAutoCompactRunOptions = {
   codexSessionsDir: string;
   sessionId: string;
   sessionPath?: string;
-  thresholdTokens?: number;
+  threshold?: TokensOrPercent;
   amountMode: CodexAutoCompactAmountMode;
   amountRaw: string;
   model: ModelType;
@@ -53,6 +54,15 @@ export type CodexAutoCompactRunResult = {
   error?: string;
 };
 
+function thresholdTokensFromSpec(spec: TokensOrPercent, modelContextWindow: number | undefined): number | undefined {
+  if (spec.kind === "tokens") return spec.tokens;
+  if (modelContextWindow === undefined) return undefined;
+  if (!Number.isFinite(modelContextWindow) || modelContextWindow <= 0) return undefined;
+  const percent = spec.percent;
+  if (!Number.isFinite(percent) || percent < 0) return undefined;
+  return Math.floor((modelContextWindow * percent) / 100);
+}
+
 function extractLastCodexTokenCount(session: CodexSession | undefined): { tokens?: number; modelContextWindow?: number } {
   if (!session || session.format !== "wrapped") return {};
 
@@ -65,8 +75,11 @@ function extractLastCodexTokenCount(session: CodexSession | undefined): { tokens
 
     const info = line.payload.info;
     if (!isJsonObject(info)) continue;
+    const lastUsage = isJsonObject(info.last_token_usage) ? info.last_token_usage : undefined;
     const totalUsage = isJsonObject(info.total_token_usage) ? info.total_token_usage : undefined;
-    const tokens = totalUsage ? asNumber(totalUsage.total_tokens) : undefined;
+    const tokens =
+      (lastUsage ? asNumber(lastUsage.total_tokens) : undefined) ??
+      (totalUsage ? asNumber(totalUsage.total_tokens) : undefined);
     const modelContextWindow = asNumber(info.model_context_window);
 
     const out: { tokens?: number; modelContextWindow?: number } = {};
@@ -78,11 +91,53 @@ function extractLastCodexTokenCount(session: CodexSession | undefined): { tokens
   return {};
 }
 
-function defaultThresholdFromContextWindow(modelContextWindow: number | undefined): number | undefined {
+export function defaultCodexThresholdFromContextWindow(modelContextWindow: number | undefined): number | undefined {
   if (modelContextWindow === undefined) return undefined;
   if (!Number.isFinite(modelContextWindow) || modelContextWindow <= 0) return undefined;
   // EVS default: trigger earlier than Codex to keep sessions comfortably under the limit.
   return Math.floor((modelContextWindow * 7) / 10);
+}
+
+type Tokenizer = ReturnType<typeof getTokenizer>;
+
+const DEFAULT_CODEX_THRESHOLD_TOKENS = 90_000;
+
+function countTokensWithTokenizer(tokenizer: Tokenizer, text: string): number {
+  if (text.length === 0) return 0;
+  return tokenizer.encode(text.normalize("NFKC"), "all").length;
+}
+
+function ensureTrailingNewline(text: string): string {
+  if (text.length === 0) return "";
+  return text.endsWith("\n") ? text : `${text}\n`;
+}
+
+function estimateCodexTokensFromSession(session: CodexSession): number | undefined {
+  if (session.format !== "wrapped") return undefined;
+
+  let tokenizer: Tokenizer | undefined;
+  try {
+    tokenizer = getTokenizer();
+  } catch {
+    return undefined;
+  }
+
+  try {
+    const parts = getCodexCompactionParts(session);
+    let total = 0;
+    for (const item of parts.responseItems) {
+      const formatted = formatCodexResponseItemForPrompt(item.payload);
+      if (!formatted) continue;
+      total += countTokensWithTokenizer(tokenizer, ensureTrailingNewline(formatted));
+    }
+    return total;
+  } finally {
+    try {
+      tokenizer.free();
+    } catch {
+      // ignore
+    }
+  }
 }
 
 function formatCodexResponseItemForPrompt(payload: Record<string, unknown>): string | undefined {
@@ -212,30 +267,90 @@ export async function runCodexAutoCompactOnce(opts: CodexAutoCompactRunOptions):
 
   const lockPath = lockPathForSession(sessionPath);
   const lock = await acquireLockWithWait(lockPath, { timeoutMs: opts.busyTimeoutMs });
-  if (!lock) return { result: "lock_timeout", usedModel: opts.model, sessionPath };
+  if (!lock) {
+    try {
+      await appendSessionLog(opts.sessionId, {
+        event: "auto_compact",
+        sessionPath,
+        result: "lock_timeout",
+        busyTimeoutMs: opts.busyTimeoutMs,
+      });
+    } catch {
+      // ignore
+    }
+    return { result: "lock_timeout", usedModel: opts.model, sessionPath };
+  }
 
   try {
     const stable = await waitForStableFile(sessionPath, { timeoutMs: opts.busyTimeoutMs });
-    if (!stable) return { result: "busy_timeout", usedModel: opts.model, sessionPath };
+    if (!stable) {
+      try {
+        await appendSessionLog(opts.sessionId, {
+          event: "auto_compact",
+          sessionPath,
+          result: "busy_timeout",
+          busyTimeoutMs: opts.busyTimeoutMs,
+        });
+      } catch {
+        // ignore
+      }
+      return { result: "busy_timeout", usedModel: opts.model, sessionPath };
+    }
 
     const parsed = await codexAdapter.parse(sessionPath);
-    if (!parsed.ok) return { result: "failed", usedModel: opts.model, sessionPath, issues: parsed.issues };
+    if (!parsed.ok) {
+      try {
+        await appendSessionLog(opts.sessionId, {
+          event: "auto_compact",
+          sessionPath,
+          result: "failed",
+          stage: "parse",
+        });
+      } catch {
+        // ignore
+      }
+      return { result: "failed", usedModel: opts.model, sessionPath, issues: parsed.issues };
+    }
 
     const tokenCount = extractLastCodexTokenCount(parsed.session);
-    const threshold =
-      opts.thresholdTokens ?? defaultThresholdFromContextWindow(tokenCount.modelContextWindow);
-    const tokens = tokenCount.tokens;
+    const thresholdFromSpec = opts.threshold ? thresholdTokensFromSpec(opts.threshold, tokenCount.modelContextWindow) : undefined;
+    const threshold = thresholdFromSpec ?? defaultCodexThresholdFromContextWindow(tokenCount.modelContextWindow) ?? DEFAULT_CODEX_THRESHOLD_TOKENS;
 
-    if (tokens === undefined || threshold === undefined) {
-      return {
-        result: "failed",
-        usedModel: opts.model,
-        sessionPath,
-        error: "[Codex] Missing token_count info (cannot decide whether to compact).",
-      };
+    let tokens = tokenCount.tokens;
+    if (tokens === undefined) {
+      tokens = estimateCodexTokensFromSession(parsed.session);
+    }
+
+    if (tokens === undefined) {
+      try {
+        await appendSessionLog(opts.sessionId, {
+          event: "auto_compact",
+          sessionPath,
+          result: "failed",
+          stage: "tokens_missing",
+          threshold,
+        });
+      } catch {
+        // ignore
+      }
+      return { result: "failed", usedModel: opts.model, sessionPath, threshold, error: "[Codex] Cannot estimate tokens." };
     }
 
     if (tokens < threshold) {
+      try {
+        await appendSessionLog(opts.sessionId, {
+          event: "auto_compact",
+          sessionPath,
+          result: "not_triggered",
+          amountMode: opts.amountMode,
+          amount: opts.amountRaw,
+          tokens,
+          threshold,
+          model: opts.model,
+        });
+      } catch {
+        // ignore
+      }
       return { result: "not_triggered", usedModel: opts.model, sessionPath, tokens, threshold };
     }
 
@@ -243,6 +358,19 @@ export async function runCodexAutoCompactOnce(opts: CodexAutoCompactRunOptions):
     if (supervisor) {
       const existingPending = await readCodexPendingCompact(opts.sessionId);
       if (existingPending?.status === "running" || existingPending?.status === "ready") {
+        try {
+          await appendSessionLog(opts.sessionId, {
+            event: "auto_compact",
+            sessionPath,
+            result: "pending_ready",
+            mode: "precompute",
+            reason: "skipped_existing_pending",
+            tokens,
+            threshold,
+          });
+        } catch {
+          // ignore
+        }
         return { result: "pending_ready", usedModel: opts.model, sessionPath, tokens, threshold };
       }
     }
@@ -266,6 +394,21 @@ export async function runCodexAutoCompactOnce(opts: CodexAutoCompactRunOptions):
     const planOp = compactCodexSession(parsed.session, { kind: "count", count: removeCount }, "__EVS_PENDING__");
     const plan = computeSelectionFromChanges({ session: parsed.session, changes: planOp.changes });
     if (!plan.selection || plan.selection.removeCount <= 0) {
+      try {
+        await appendSessionLog(opts.sessionId, {
+          event: "auto_compact",
+          sessionPath,
+          result: "not_triggered",
+          reason: "nothing_to_compact",
+          amountMode: opts.amountMode,
+          amount: opts.amountRaw,
+          tokens,
+          threshold,
+          model: opts.model,
+        });
+      } catch {
+        // ignore
+      }
       return { result: "not_triggered", usedModel: opts.model, sessionPath, tokens, threshold };
     }
 
@@ -322,6 +465,24 @@ export async function runCodexAutoCompactOnce(opts: CodexAutoCompactRunOptions):
         ...(source ? { source } : {}),
       });
 
+      try {
+        await appendSessionLog(opts.sessionId, {
+          event: "auto_compact",
+          sessionPath,
+          result: "pending_ready",
+          mode: "precompute",
+          supervisorReloadMode: supervisor.reloadMode,
+          amountMode: opts.amountMode,
+          amount: opts.amountRaw,
+          tokens,
+          threshold,
+          ...(plan.selection.removeCount > 0 ? { removeCount: plan.selection.removeCount } : {}),
+          model: usedModel,
+        });
+      } catch {
+        // ignore
+      }
+
       if (supervisor.reloadMode === "auto") {
         try {
           await appendSupervisorControlCommand({
@@ -346,6 +507,21 @@ export async function runCodexAutoCompactOnce(opts: CodexAutoCompactRunOptions):
     const preErrors = countBySeverity(preIssues).error;
 
     if (postErrors > preErrors) {
+      try {
+        await appendSessionLog(opts.sessionId, {
+          event: "auto_compact",
+          sessionPath,
+          result: "aborted_validation",
+          stage: "apply",
+          tokens,
+          threshold,
+          amountMode: opts.amountMode,
+          amount: opts.amountRaw,
+          model: usedModel,
+        });
+      } catch {
+        // ignore
+      }
       return { result: "aborted_validation", usedModel, sessionPath, tokens, threshold, issues: postIssues };
     }
 
@@ -353,9 +529,40 @@ export async function runCodexAutoCompactOnce(opts: CodexAutoCompactRunOptions):
     await cleanupOldBackups(opts.sessionId, 10);
     await writeFileAtomic(sessionPath, stringifyJsonl(compacted.nextValues));
 
+    try {
+      await appendSessionLog(opts.sessionId, {
+        event: "auto_compact",
+        sessionPath,
+        result: "success",
+        supervisorReloadMode: null,
+        amountMode: opts.amountMode,
+        amount: opts.amountRaw,
+        tokens,
+        threshold,
+        ...(plan.selection.removeCount > 0 ? { removeCount: plan.selection.removeCount } : {}),
+        model: usedModel,
+      });
+    } catch {
+      // ignore
+    }
+
     return { result: "success", usedModel, sessionPath, tokens, threshold };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    try {
+      await appendSessionLog(opts.sessionId, {
+        event: "auto_compact",
+        sessionPath,
+        result: "failed",
+        stage: "exception",
+        amountMode: opts.amountMode,
+        amount: opts.amountRaw,
+        model: opts.model,
+        error: message,
+      });
+    } catch {
+      // ignore
+    }
     return { result: "failed", usedModel: opts.model, sessionPath, error: message };
   } finally {
     await lock.release();
@@ -389,17 +596,57 @@ export async function applyCodexPendingCompactOnReload(params: {
 
   const lockPath = lockPathForSession(params.sessionPath);
   const lock = await acquireLockWithWait(lockPath, { timeoutMs: params.busyTimeoutMs });
-  if (!lock) return { applied: false, reason: "lock_timeout" };
+  if (!lock) {
+    try {
+      await appendSessionLog(params.sessionId, {
+        event: "auto_compact",
+        sessionPath: params.sessionPath,
+        result: "lock_timeout",
+        busyTimeoutMs: params.busyTimeoutMs,
+      });
+    } catch {
+      // ignore
+    }
+    return { applied: false, reason: "lock_timeout" };
+  }
 
   try {
     const stable = await waitForStableFile(params.sessionPath, { timeoutMs: params.busyTimeoutMs });
-    if (!stable) return { applied: false, reason: "busy_timeout" };
+    if (!stable) {
+      try {
+        await appendSessionLog(params.sessionId, {
+          event: "auto_compact",
+          sessionPath: params.sessionPath,
+          result: "busy_timeout",
+          busyTimeoutMs: params.busyTimeoutMs,
+        });
+      } catch {
+        // ignore
+      }
+      return { applied: false, reason: "busy_timeout" };
+    }
 
     const parsed = await codexAdapter.parse(params.sessionPath);
-    if (!parsed.ok) return { applied: false, reason: "parse_failed" };
+    if (!parsed.ok) {
+      try {
+        await appendSessionLog(params.sessionId, {
+          event: "auto_compact",
+          sessionPath: params.sessionPath,
+          result: "failed",
+          stage: "parse",
+        });
+      } catch {
+        // ignore
+      }
+      return { applied: false, reason: "parse_failed" };
+    }
 
     const preIssues = [...parsed.issues, ...codexAdapter.validate(parsed.session)];
     const preErrors = countBySeverity(preIssues).error;
+    const tokenCount = extractLastCodexTokenCount(parsed.session);
+    const tokensBefore = tokenCount.tokens;
+    const threshold =
+      pending.thresholdTokens ?? defaultCodexThresholdFromContextWindow(tokenCount.modelContextWindow);
 
     // Verify selection still matches the current file at the reload boundary.
     const selectionPlanOp = compactCodexSession(parsed.session, { kind: "count", count: selection.removeCount }, "__EVS_PENDING__");
@@ -415,6 +662,18 @@ export async function applyCodexPendingCompactOnReload(params: {
       } catch {
         // ignore
       }
+      try {
+        await appendSessionLog(params.sessionId, {
+          event: "auto_compact",
+          sessionPath: params.sessionPath,
+          result: "selection_mismatch",
+          stage: "apply",
+          ...(tokensBefore !== undefined ? { tokens: tokensBefore } : {}),
+          ...(threshold !== undefined ? { threshold } : {}),
+        });
+      } catch {
+        // ignore
+      }
       return { applied: false, reason: "selection_mismatch" };
     }
 
@@ -422,8 +681,24 @@ export async function applyCodexPendingCompactOnReload(params: {
     const postParsed = codexAdapter.parseValues(params.sessionPath, op.nextValues);
     const postIssues = [...postParsed.issues, ...(postParsed.ok ? codexAdapter.validate(postParsed.session) : [])];
     const postErrors = countBySeverity(postIssues).error;
+    const tokensAfterEstimate = postParsed.ok ? estimateCodexTokensFromSession(postParsed.session) : undefined;
 
     if (postErrors > preErrors) {
+      try {
+        await appendSessionLog(params.sessionId, {
+          event: "auto_compact",
+          sessionPath: params.sessionPath,
+          result: "aborted_validation",
+          stage: "apply",
+          ...(tokensBefore !== undefined ? { tokens: tokensBefore } : {}),
+          ...(threshold !== undefined ? { threshold } : {}),
+          ...(pending.amountMode ? { amountMode: pending.amountMode } : {}),
+          ...(pending.amountRaw ? { amount: pending.amountRaw } : {}),
+          ...(pending.model ? { model: pending.model } : {}),
+        });
+      } catch {
+        // ignore
+      }
       return { applied: false, reason: "aborted_validation" };
     }
 
@@ -433,9 +708,38 @@ export async function applyCodexPendingCompactOnReload(params: {
 
     await clearCodexPendingCompact(params.sessionId);
 
+    try {
+      await appendSessionLog(params.sessionId, {
+        event: "auto_compact",
+        sessionPath: params.sessionPath,
+        result: "success",
+        supervisorReloadMode: null,
+        ...(pending.amountMode ? { amountMode: pending.amountMode } : {}),
+        ...(pending.amountRaw ? { amount: pending.amountRaw } : {}),
+        ...(tokensBefore !== undefined ? { tokens: tokensBefore } : {}),
+        tokensAfter: tokensAfterEstimate ?? null,
+        ...(threshold !== undefined ? { threshold } : {}),
+        ...(selection.removeCount > 0 ? { removeCount: selection.removeCount } : {}),
+        ...(pending.model ? { model: pending.model } : {}),
+      });
+    } catch {
+      // ignore
+    }
+
     return { applied: true };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    try {
+      await appendSessionLog(params.sessionId, {
+        event: "auto_compact",
+        sessionPath: params.sessionPath,
+        result: "failed",
+        stage: "exception",
+        error: message,
+      });
+    } catch {
+      // ignore
+    }
     return { applied: false, reason: "failed", error: message };
   } finally {
     await lock.release();

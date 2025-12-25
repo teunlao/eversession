@@ -252,6 +252,7 @@ export async function runClaudeStatuslineCommand(opts: StatuslineOptions): Promi
       const amountMessages = config?.amountMessages;
       const amount = config?.amount;
       const keepLast = config?.keepLast;
+      const maxTokens = config?.maxTokens;
       const model = config?.model ?? "haiku";
       const busyTimeout = config?.busyTimeout ?? "10s";
       const defaultAmountTokens = "40%";
@@ -272,6 +273,7 @@ export async function runClaudeStatuslineCommand(opts: StatuslineOptions): Promi
           "--busy-timeout",
           busyTimeout,
         ];
+        if (maxTokens !== undefined && maxTokens.trim().length > 0) args.push("--max-tokens", maxTokens);
         const keepLastRaw = keepLast;
         const hasAmountTokens = amountTokens !== undefined && amountTokens.trim().length > 0;
 
