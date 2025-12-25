@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "backup": false,
+  "claude": {
+    "reload": "manual",
+    "autoCompact": {
+      "enabled": true,
+      "threshold": "140k",
+      "amountTokens": "40%",
+      "amountMessages": "25%",
+      "model": "haiku",
+      "busyTimeout": "10s",
+      "notify": false,
+      "backup": false
+    }
+  },
+  "codex": {
+    "reload": "manual",
+    "autoCompact": {
+      "enabled": true,
+      "threshold": "70%",
+      "amountTokens": "40%",
+      "amountMessages": "35%",
+      "model": "haiku",
+      "busyTimeout": "10s",
+      "notify": false,
+      "backup": false
+    }
+  }
+}

@@ -5,29 +5,32 @@ import { type AgentAdapter, getAdapterForDetect } from "../agents/registry.js";
 import { createBackup, writeFileAtomic } from "../core/fs.js";
 import { countBySeverity, type Issue } from "../core/issues.js";
 import { readTextFile, stringifyJsonl } from "../core/jsonl.js";
+import { resolveEvsConfigForCwd } from "../core/project-config.js";
 import { compareErrorCounts, printChangesHuman, printIssuesHuman } from "./common.js";
-import { looksLikeSessionRef, resolveSessionPathForCli } from "./session-ref.js";
+import { looksLikeSessionRef, resolveSessionForCli } from "./session-ref.js";
 
 export function registerCompactCommand(program: Command): void {
   program
     .command("compact")
-    .argument("[id]", "session path (*.jsonl) or Claude session UUID (optional when running inside Claude Code)")
-    .argument("[amount]", "number of messages/items or percent (e.g. 50 or 20%)")
+    .description("Compact the current session (manual)")
+    .argument("[ref]", "session id or .jsonl path (omit under evs supervisor)")
+    .argument("[amount]", "messages/items to compact (e.g. 50 or 20%)")
+    .option("--agent <agent>", "claude|codex (optional; only needed when id is ambiguous)")
     .option("--amount-messages <n|%>", "amount to compact by messages (overrides positional amount)")
     .option("--amount-tokens <n|%|k>", "amount to compact by tokens (Claude only)")
-    .option("-m, --model <model>", "generate summary via LLM (haiku|sonnet|opus)")
-    .option("--summary <text>", "summary text to inject (manual mode)")
+    .option("-m, --model <model>", "LLM model (haiku|sonnet|opus)")
+    .option("--summary <text>", "summary text to inject (skips LLM)")
     .option("--summary-file <path>", "read summary text from file")
     .option("--keep-last", "keep last N items instead of compacting first N")
     .option("--dry-run", "show changes but do not write")
-    .option("--no-backup", "do not create a backup")
+    .option("--backup", "create a backup before writing")
     .option("--force", "write even if post-validation is worse")
-    .option("--json", "output JSON report")
     .action(
       async (
         a: string | undefined,
         b: string | undefined,
         opts: {
+          agent?: string;
           amountMessages?: string;
           amountTokens?: string;
           model?: string;
@@ -37,27 +40,30 @@ export function registerCompactCommand(program: Command): void {
           dryRun?: boolean;
           backup?: boolean;
           force?: boolean;
-          json?: boolean;
         },
       ) => {
-        const defaultAmount = "25%";
-        const parsedArgs = (): { idArg?: string; amountRaw: string } => {
-          if (a && b) return { idArg: a, amountRaw: b };
+        const parsedArgs = (): { refArg?: string; amountArg?: string } => {
+          if (a && b) return { refArg: a, amountArg: b };
           if (a && !b) {
-            return looksLikeSessionRef(a) ? { idArg: a, amountRaw: defaultAmount } : { amountRaw: a };
+            return looksLikeSessionRef(a) ? { refArg: a } : { amountArg: a };
           }
-          return { amountRaw: defaultAmount };
+          return {};
         };
 
-        const { idArg, amountRaw } = parsedArgs();
+        const { refArg, amountArg } = parsedArgs();
 
-        const resolved = await resolveSessionPathForCli({ commandLabel: "compact", idArg });
+        const resolved = await resolveSessionForCli({ commandLabel: "compact", refArg, agent: opts.agent });
         if (!resolved.ok) {
           process.stderr.write(resolved.error + "\n");
           process.exitCode = resolved.exitCode;
           return;
         }
         const sessionPath = resolved.value.sessionPath;
+        const agent = resolved.value.agent;
+
+        const cfg = await resolveEvsConfigForCwd(process.cwd());
+        const agentCfg = agent === "claude" ? cfg.config.claude : cfg.config.codex;
+        const auto = agentCfg?.autoCompact;
 
         const detected = await detectSession(sessionPath);
         if (detected.agent === "unknown") {
@@ -69,8 +75,7 @@ export function registerCompactCommand(program: Command): void {
               location: { kind: "file", path: sessionPath },
             },
           ];
-          if (opts.json) process.stdout.write(JSON.stringify({ issues }, null, 2) + "\n");
-          else printIssuesHuman(issues);
+          printIssuesHuman(issues);
           process.exitCode = 2;
           return;
         }
@@ -93,11 +98,24 @@ export function registerCompactCommand(program: Command): void {
               location: { kind: "file", path: sessionPath },
             },
           ];
-          if (opts.json) process.stdout.write(JSON.stringify({ issues }, null, 2) + "\n");
-          else printIssuesHuman(issues);
+          printIssuesHuman(issues);
           process.exitCode = 2;
           return;
         }
+
+        const defaultModel = auto?.model?.trim();
+        const model = opts.model?.trim() ?? (defaultModel && defaultModel.length > 0 ? defaultModel : undefined);
+
+        const defaultAmountMessages = auto?.amountMessages?.trim();
+        const fallbackAmountMessages = agent === "codex" ? "35%" : "25%";
+        const effectiveMessagesAmount =
+          amountArg?.trim() ??
+          (defaultAmountMessages && defaultAmountMessages.length > 0 ? defaultAmountMessages : fallbackAmountMessages);
+
+        const defaultAmountTokens = agent === "claude" ? auto?.amountTokens?.trim() : undefined;
+        const effectiveAmountTokens =
+          amountTokensRaw ??
+          (amountMessagesRaw || amountArg ? undefined : defaultAmountTokens && defaultAmountTokens.length > 0 ? defaultAmountTokens : undefined);
 
         const adapter = getAdapterForDetect(detected) as AgentAdapter<unknown> | undefined;
         if (!adapter) {
@@ -107,8 +125,7 @@ export function registerCompactCommand(program: Command): void {
 
         const parsed = await adapter.parse(sessionPath);
         if (!parsed.ok) {
-          if (opts.json) process.stdout.write(JSON.stringify({ issues: parsed.issues }, null, 2) + "\n");
-          else printIssuesHuman(parsed.issues);
+          printIssuesHuman(parsed.issues);
           process.exitCode = 1;
           return;
         }
@@ -122,8 +139,7 @@ export function registerCompactCommand(program: Command): void {
               location: { kind: "file", path: sessionPath },
             },
           ];
-          if (opts.json) process.stdout.write(JSON.stringify({ issues }, null, 2) + "\n");
-          else printIssuesHuman(issues);
+          printIssuesHuman(issues);
           process.exitCode = 2;
           return;
         }
@@ -135,21 +151,18 @@ export function registerCompactCommand(program: Command): void {
           keepLast?: boolean;
           summary?: string;
           model?: string;
-          json?: boolean;
           log?: (line: string) => void;
-        } = { amountRaw };
+        } = { amountRaw: effectiveMessagesAmount };
         if (amountMessagesRaw) prepareParams.amountMessagesRaw = amountMessagesRaw;
-        if (amountTokensRaw) prepareParams.amountTokensRaw = amountTokensRaw;
+        if (effectiveAmountTokens) prepareParams.amountTokensRaw = effectiveAmountTokens;
         if (opts.keepLast !== undefined) prepareParams.keepLast = opts.keepLast;
         if (summary !== undefined) prepareParams.summary = summary;
-        if (opts.model !== undefined) prepareParams.model = opts.model;
-        if (opts.json !== undefined) prepareParams.json = opts.json;
-        if (!opts.json) prepareParams.log = (line: string) => process.stdout.write(line + "\n");
+        if (model !== undefined) prepareParams.model = model;
+        prepareParams.log = (line: string) => process.stdout.write(line + "\n");
 
         const prepared = await adapter.prepareCompact(parsed.session, prepareParams);
         if (!prepared.ok) {
-          if (opts.json) process.stdout.write(JSON.stringify({ issues: prepared.issues }, null, 2) + "\n");
-          else printIssuesHuman(prepared.issues);
+          printIssuesHuman(prepared.issues);
           process.exitCode = prepared.exitCode ?? 2;
           return;
         }
@@ -192,14 +205,11 @@ export function registerCompactCommand(program: Command): void {
           aborted,
         };
 
-        if (opts.json) process.stdout.write(JSON.stringify(report, null, 2) + "\n");
-        else {
-          printChangesHuman(combinedChanges, { limit: 50 });
-          if (worsened) {
-            process.stderr.write(
-              `\nPost-validation errors increased (${delta.before} → ${delta.after}). Use --force to write anyway.\n`,
-            );
-          }
+        printChangesHuman(combinedChanges, { limit: 50 });
+        if (worsened) {
+          process.stderr.write(
+            `\nPost-validation errors increased (${delta.before} → ${delta.after}). Use --force to write anyway.\n`,
+          );
         }
 
         if (opts.dryRun) return;
@@ -207,7 +217,9 @@ export function registerCompactCommand(program: Command): void {
           process.exitCode = 1;
           return;
         }
-        if (opts.backup !== false) await createBackup(sessionPath);
+
+        const backupEnabled = opts.backup ?? cfg.config.backup ?? false;
+        if (backupEnabled) await createBackup(sessionPath);
         await writeFileAtomic(sessionPath, stringifyJsonl(finalValues));
       },
     );

@@ -2,47 +2,36 @@ import type { Command } from "commander";
 
 import { detectSession } from "../agents/detect.js";
 import { type AgentAdapter, getAdapterForDetect } from "../agents/registry.js";
+import type { ChangeSet } from "../core/changes.js";
 import { createBackup, writeFileAtomic } from "../core/fs.js";
 import { countBySeverity, type Issue } from "../core/issues.js";
 import { stringifyJsonl } from "../core/jsonl.js";
-import { parseLineSpec } from "../core/spec.js";
 import { resolveEvsConfigForCwd } from "../core/project-config.js";
-import { compareErrorCounts, printChangesHuman, printIssuesHuman } from "./common.js";
-import { looksLikeSessionRef, resolveSessionForCli } from "./session-ref.js";
+import { compareErrorCounts, hasErrors, printChangesHuman, printIssuesHuman } from "./common.js";
+import { resolveSessionForCli } from "./session-ref.js";
 
-export function registerRemoveCommand(program: Command): void {
+export function registerLintCommand(program: Command): void {
   program
-    .command("remove")
-    .description("Delete specific JSONL lines (for debugging/repair)")
+    .command("lint")
+    .description("Validate a session file (use --fix to apply safe fixes)")
     .argument("[ref]", "session id or .jsonl path (omit under evs supervisor)")
-    .argument("[lines]", "line spec (e.g. 1,2,5-7)")
     .option("--agent <agent>", "claude|codex (optional; only needed when id is ambiguous)")
-    .option("--no-preserve-turns", "do not expand to full assistant turns (Claude only)")
+    .option("--fix", "apply fixes")
     .option("--dry-run", "show changes but do not write")
     .option("--backup", "create a backup before writing")
     .option("--force", "write even if post-validation is worse")
     .action(
       async (
-        a: string | undefined,
-        b: string | undefined,
-        opts: { agent?: string; preserveTurns?: boolean; dryRun?: boolean; backup?: boolean; force?: boolean },
+        refArg: string | undefined,
+        opts: {
+          agent?: string;
+          fix?: boolean;
+          dryRun?: boolean;
+          backup?: boolean;
+          force?: boolean;
+        },
       ) => {
-        const parsedArgs = (): { idArg?: string; linesRaw?: string } => {
-          if (a && b) return { idArg: a, linesRaw: b };
-          if (a && !b) {
-            return looksLikeSessionRef(a) ? { idArg: a } : { linesRaw: a };
-          }
-          return {};
-        };
-
-        const { idArg, linesRaw } = parsedArgs();
-        if (!linesRaw) {
-          process.stderr.write("[evs remove] Missing <lines>. Example: evs remove 1,2,5-7\n");
-          process.exitCode = 2;
-          return;
-        }
-
-        const resolved = await resolveSessionForCli({ commandLabel: "remove", refArg: idArg, agent: opts.agent });
+        const resolved = await resolveSessionForCli({ commandLabel: "lint", refArg, agent: opts.agent });
         if (!resolved.ok) {
           process.stderr.write(resolved.error + "\n");
           process.exitCode = resolved.exitCode;
@@ -58,14 +47,13 @@ export function registerRemoveCommand(program: Command): void {
               code: "core.unknown_format",
               message: "[Core] Failed to detect session format.",
               location: { kind: "file", path: sessionPath },
+              details: { notes: detected.notes },
             },
           ];
           printIssuesHuman(issues);
           process.exitCode = 2;
           return;
         }
-
-        const lines = new Set(parseLineSpec(linesRaw));
 
         const adapter = getAdapterForDetect(detected) as AgentAdapter<unknown> | undefined;
         if (!adapter) {
@@ -80,21 +68,50 @@ export function registerRemoveCommand(program: Command): void {
           return;
         }
 
-        const session = parsed.session;
-        const preIssues = [...parsed.issues, ...adapter.validate(session)];
-        const op = adapter.remove?.(session, {
-          lines,
-          options: {
-            preserveAssistantTurns: opts.preserveTurns ?? true,
-            preserveCallPairs: true,
-          },
-        });
-        if (!op) {
-          process.exitCode = 1;
+        const preIssues = [...parsed.issues, ...adapter.validate(parsed.session)];
+        if (opts.fix !== true) {
+          printIssuesHuman(preIssues);
+          process.exitCode = hasErrors(preIssues) ? 1 : 0;
           return;
         }
 
-        const postParsed = adapter.parseValues(sessionPath, op.nextValues);
+        const cfg = await resolveEvsConfigForCwd(process.cwd());
+        const backupEnabled = opts.backup ?? cfg.config.backup ?? false;
+
+        let session = parsed.session;
+        let combinedChanges: ChangeSet = { changes: [] };
+
+        if (detected.agent === "codex" && detected.format === "legacy" && adapter.migrate) {
+          const migrated = adapter.migrate(session, { to: "codex-wrapped" });
+          combinedChanges = { changes: [...combinedChanges.changes, ...migrated.changes.changes] };
+          const migratedParsed = adapter.parseValues(sessionPath, migrated.nextValues);
+          if (!migratedParsed.ok) {
+            printIssuesHuman(migratedParsed.issues);
+            process.exitCode = 1;
+            return;
+          }
+          session = migratedParsed.session;
+        }
+
+        if (!adapter.fix) {
+          const issues: Issue[] = [
+            {
+              severity: "error",
+              code: "core.fix_unsupported_agent",
+              message: "[Core] `lint --fix` is not supported for this session type.",
+              location: { kind: "file", path: sessionPath },
+            },
+          ];
+          printIssuesHuman(issues);
+          process.exitCode = 2;
+          return;
+        }
+
+        const fixed = adapter.fix(session, {});
+        combinedChanges = { changes: [...combinedChanges.changes, ...fixed.changes.changes] };
+        const finalValues = fixed.nextValues;
+
+        const postParsed = adapter.parseValues(sessionPath, finalValues);
         const postIssues = [...postParsed.issues, ...(postParsed.ok ? adapter.validate(postParsed.session) : [])];
 
         const delta = compareErrorCounts(preIssues, postIssues);
@@ -103,14 +120,16 @@ export function registerRemoveCommand(program: Command): void {
 
         const report = {
           agent: adapter.id,
-          changes: op.changes,
+          changes: combinedChanges,
           wrote: !opts.dryRun && !aborted,
           pre: countBySeverity(preIssues),
           post: countBySeverity(postIssues),
           aborted,
         };
 
-        printChangesHuman(op.changes, { limit: 50 });
+        printChangesHuman(combinedChanges, { limit: 50 });
+        const c = report.post;
+        process.stdout.write(`issues: errors=${c.error} warnings=${c.warning} info=${c.info}\n`);
         if (worsened) {
           process.stderr.write(
             `\nPost-validation errors increased (${delta.before} → ${delta.after}). Use --force to write anyway.\n`,
@@ -123,10 +142,9 @@ export function registerRemoveCommand(program: Command): void {
           return;
         }
 
-        const cfg = await resolveEvsConfigForCwd(process.cwd());
-        const backupEnabled = opts.backup ?? cfg.config.backup ?? false;
         if (backupEnabled) await createBackup(sessionPath);
-        await writeFileAtomic(sessionPath, stringifyJsonl(op.nextValues));
+        await writeFileAtomic(sessionPath, stringifyJsonl(finalValues));
+        process.exitCode = hasErrors(postIssues) ? 1 : 0;
       },
     );
 }

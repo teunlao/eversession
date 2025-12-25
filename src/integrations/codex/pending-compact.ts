@@ -2,7 +2,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
 import { fileExists, writeFileAtomic } from "../../core/fs.js";
-import { asNumber, asString, isJsonObject } from "../../core/json.js";
+import { asBoolean, asNumber, asString, isJsonObject } from "../../core/json.js";
 import { getSessionDir } from "../claude/eversession-session-storage.js";
 
 export type CodexPendingCompactStatus = "running" | "ready" | "failed" | "stale";
@@ -28,6 +28,7 @@ export type CodexPendingCompact = {
   failedAt?: string;
   thresholdTokens?: number;
   tokensAtTrigger?: number;
+  backup?: boolean;
   amountMode?: "messages" | "tokens";
   amountRaw?: string;
   model?: string;
@@ -91,6 +92,7 @@ export function parseCodexPendingCompact(value: unknown): CodexPendingCompact | 
   const failedAt = asString(value.failedAt);
   const thresholdTokens = asNumber(value.thresholdTokens);
   const tokensAtTrigger = asNumber(value.tokensAtTrigger);
+  const backup = asBoolean(value.backup);
   const amountModeRaw = asString(value.amountMode);
   const amountMode: "messages" | "tokens" | undefined =
     amountModeRaw === "messages" || amountModeRaw === "tokens" ? amountModeRaw : undefined;
@@ -110,6 +112,7 @@ export function parseCodexPendingCompact(value: unknown): CodexPendingCompact | 
     ...(failedAt ? { failedAt } : {}),
     ...(thresholdTokens !== undefined && Number.isFinite(thresholdTokens) ? { thresholdTokens } : {}),
     ...(tokensAtTrigger !== undefined && Number.isFinite(tokensAtTrigger) ? { tokensAtTrigger } : {}),
+    ...(backup !== undefined ? { backup } : {}),
     ...(amountMode ? { amountMode } : {}),
     ...(amountRaw ? { amountRaw } : {}),
     ...(model ? { model } : {}),

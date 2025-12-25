@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import type { Command } from "commander";
 import { parseDurationMs } from "../core/duration.js";
 import { deriveSessionIdFromPath } from "../core/paths.js";
+import { resolveEvsConfigForCwd } from "../core/project-config.js";
 import { parseTokenThreshold } from "../core/threshold.js";
 import { resolveClaudeSessionPathFromInputs } from "../integrations/claude/active-session.js";
 import {
@@ -22,7 +23,6 @@ import {
   readClaudeSupervisorEnv,
   readSupervisorHandshake,
 } from "../integrations/claude/supervisor-control.js";
-import { readAutoCompactConfigFromProjectSettings } from "../integrations/claude/statusline.js";
 
 function spawnDetached(argv: string[]): void {
   const child = spawn(process.execPath, argv, { detached: true, stdio: "ignore" });
@@ -38,20 +38,23 @@ async function resolveClaudeSessionPathForAutoCompact(params: {
   if (params.hookPath) return params.hookPath;
 
   const supervisor = readClaudeSupervisorEnv();
-  if (supervisor) {
-    try {
-      const hs = await readSupervisorHandshake(supervisor.controlDir);
-      if (hs && hs.runId === supervisor.runId && hs.transcriptPath.trim().length > 0) return hs.transcriptPath;
-    } catch {
-      // ignore handshake errors
-    }
+  if (!supervisor) return undefined;
+
+  try {
+    const hs = await readSupervisorHandshake(supervisor.controlDir);
+    if (hs && hs.runId === supervisor.runId && hs.transcriptPath.trim().length > 0) return hs.transcriptPath;
+  } catch {
+    // ignore handshake errors
   }
 
-  return resolveClaudeSessionPathFromInputs({ cwd: params.cwd, allowDiscover: true });
+  // Best-effort: hooks may still provide context even when not passed explicitly.
+  return resolveClaudeSessionPathFromInputs({ cwd: params.cwd, allowDiscover: false });
 }
 
 export function registerAutoCompactCommand(program: Command): void {
-  const cmd = program.command("auto-compact").description("Auto compaction orchestrator for Claude Code hooks");
+  const cmd = program
+    .command("auto-compact", { hidden: true })
+    .description("Internal: auto-compaction orchestrator for Claude Code hooks");
 
   cmd
     .command("start")
@@ -83,25 +86,39 @@ export function registerAutoCompactCommand(program: Command): void {
       }) => {
         const hook = await readClaudeHookInputIfAny(25);
         const cwd = resolveClaudeActiveCwd(opts.cwd ?? hook?.cwd);
-        const hookCfg = await readAutoCompactConfigFromProjectSettings(cwd);
+        const supervisor = readClaudeSupervisorEnv();
+        if (!supervisor) {
+          // Safety: never auto-compact without an active EVS supervisor.
+          process.exitCode = 0;
+          return;
+        }
+
+        const cfg = await resolveEvsConfigForCwd(cwd);
+        const auto = cfg.config.claude?.autoCompact;
+        if (auto?.enabled === false) {
+          process.exitCode = 0;
+          return;
+        }
 
         const thresholdTokens =
           opts.threshold !== undefined
             ? parseTokenThreshold(opts.threshold)
-            : hookCfg?.thresholdTokens !== undefined
-              ? hookCfg.thresholdTokens
+            : auto?.threshold
+              ? parseTokenThreshold(auto.threshold)
               : parseTokenThreshold("140k");
 
         const maxPromptTokens = opts.maxTokens
           ? parseTokenThreshold(opts.maxTokens)
-          : hookCfg?.maxTokens
-            ? parseTokenThreshold(hookCfg.maxTokens)
+          : auto?.maxTokens
+            ? parseTokenThreshold(auto.maxTokens)
             : undefined;
 
-        const modelRaw = opts.model?.trim() ?? hookCfg?.model?.trim();
+        const modelRaw = opts.model?.trim() ?? auto?.model?.trim();
         const model = isClaudeAutoCompactModel(modelRaw) ? modelRaw : "haiku";
 
-        const busyTimeoutMs = parseDurationMs(opts.busyTimeout?.trim() ?? hookCfg?.busyTimeout ?? "10s");
+        const busyTimeoutMs = parseDurationMs(opts.busyTimeout?.trim() ?? auto?.busyTimeout ?? "10s");
+        const notify = opts.notify ?? auto?.notify ?? false;
+        const backup = auto?.backup ?? cfg.config.backup ?? false;
 
         const defaultAmountTokens = "40%";
         const defaultAmountMessages = "25%";
@@ -117,16 +134,16 @@ export function registerAutoCompactCommand(program: Command): void {
           (cliAmountArgRaw !== undefined && cliAmountArgRaw.length > 0) ||
           (cliKeepLastRaw !== undefined && cliKeepLastRaw.length > 0);
 
-        const amountTokensRaw = cliSpecifiedAmount ? cliAmountTokensRaw : hookCfg?.amountTokens?.trim();
-        const amountMessagesRaw = cliSpecifiedAmount ? cliAmountMessagesRaw : hookCfg?.amountMessages?.trim();
-        const amountArgRaw = cliSpecifiedAmount ? cliAmountArgRaw : hookCfg?.amount?.trim();
-        const keepLastRaw = cliSpecifiedAmount ? cliKeepLastRaw : hookCfg?.keepLast?.trim();
-        if (amountTokensRaw && amountMessagesRaw) {
+        const amountTokensRaw = cliSpecifiedAmount ? cliAmountTokensRaw : auto?.amountTokens?.trim();
+        const amountMessagesRaw = cliSpecifiedAmount ? cliAmountMessagesRaw : auto?.amountMessages?.trim();
+        const amountArgRaw = cliSpecifiedAmount ? cliAmountArgRaw : undefined;
+        const keepLastRaw = cliSpecifiedAmount ? cliKeepLastRaw : auto?.keepLast?.trim();
+        if (cliAmountTokensRaw && cliAmountMessagesRaw) {
           process.stderr.write("[evs auto-compact] Use either --amount-messages or --amount-tokens (not both).\n");
           process.exitCode = 2;
           return;
         }
-        if (amountTokensRaw && amountArgRaw) {
+        if (cliAmountTokensRaw && cliAmountArgRaw) {
           process.stderr.write("[evs auto-compact] Use either --amount (messages) or --amount-tokens (not both).\n");
           process.exitCode = 2;
           return;
@@ -150,15 +167,14 @@ export function registerAutoCompactCommand(program: Command): void {
         });
         if (!sessionPath) {
           // No session to work with
-          process.exitCode = 1;
+          process.exitCode = 0;
           return;
         }
 
         const sessionId = deriveSessionIdFromPath(sessionPath);
-        const supervisor = readClaudeSupervisorEnv();
 
         // Check for pending reload from session state (set by previous compact)
-        if (supervisor && supervisor.reloadMode === "auto") {
+        if (supervisor.reloadMode === "auto") {
           const state = await readSessionState(sessionId);
           if (state?.pendingReload) {
             try {
@@ -194,8 +210,6 @@ export function registerAutoCompactCommand(program: Command): void {
           ...(maxPromptTokens !== undefined ? { maxPromptTokens } : {}),
         });
 
-        process.stdout.write(`[evs] auto-compact started session=${sessionId}\n`);
-
         const cliPath = process.argv[1];
         if (!cliPath) throw new Error("[AutoCompact] Cannot determine CLI path to spawn background process.");
 
@@ -217,7 +231,7 @@ export function registerAutoCompactCommand(program: Command): void {
         ];
         if (keepLastRaw) args.push("--keep-last", keepLastRaw);
         if (maxPromptTokens !== undefined) args.push("--max-tokens", String(maxPromptTokens));
-        if (opts.notify) args.push("--notify");
+        if (notify) args.push("--notify");
 
         spawnDetached(args);
       },
@@ -253,25 +267,38 @@ export function registerAutoCompactCommand(program: Command): void {
       }) => {
         const hook = await readClaudeHookInputIfAny(25);
         const cwd = resolveClaudeActiveCwd(opts.cwd ?? hook?.cwd);
-        const hookCfg = await readAutoCompactConfigFromProjectSettings(cwd);
+        const supervisor = readClaudeSupervisorEnv();
+        if (!supervisor) {
+          process.exitCode = 0;
+          return;
+        }
+
+        const cfg = await resolveEvsConfigForCwd(cwd);
+        const auto = cfg.config.claude?.autoCompact;
+        if (auto?.enabled === false) {
+          process.exitCode = 0;
+          return;
+        }
 
         const thresholdTokens =
           opts.threshold !== undefined
             ? parseTokenThreshold(opts.threshold)
-            : hookCfg?.thresholdTokens !== undefined
-              ? hookCfg.thresholdTokens
+            : auto?.threshold
+              ? parseTokenThreshold(auto.threshold)
               : parseTokenThreshold("140k");
 
         const maxPromptTokens = opts.maxTokens
           ? parseTokenThreshold(opts.maxTokens)
-          : hookCfg?.maxTokens
-            ? parseTokenThreshold(hookCfg.maxTokens)
+          : auto?.maxTokens
+            ? parseTokenThreshold(auto.maxTokens)
             : undefined;
 
-        const modelRaw = opts.model?.trim() ?? hookCfg?.model?.trim();
+        const modelRaw = opts.model?.trim() ?? auto?.model?.trim();
         const model = isClaudeAutoCompactModel(modelRaw) ? modelRaw : "haiku";
 
-        const busyTimeoutMs = parseDurationMs(opts.busyTimeout?.trim() ?? hookCfg?.busyTimeout ?? "10s");
+        const busyTimeoutMs = parseDurationMs(opts.busyTimeout?.trim() ?? auto?.busyTimeout ?? "10s");
+        const notify = opts.notify ?? auto?.notify ?? false;
+        const backup = auto?.backup ?? cfg.config.backup ?? false;
 
         const defaultAmountTokens = "40%";
         const defaultAmountMessages = "25%";
@@ -287,16 +314,16 @@ export function registerAutoCompactCommand(program: Command): void {
           (cliAmountArgRaw !== undefined && cliAmountArgRaw.length > 0) ||
           (cliKeepLastRaw !== undefined && cliKeepLastRaw.length > 0);
 
-        const amountTokensRaw = cliSpecifiedAmount ? cliAmountTokensRaw : hookCfg?.amountTokens?.trim();
-        const amountMessagesRaw = cliSpecifiedAmount ? cliAmountMessagesRaw : hookCfg?.amountMessages?.trim();
-        const amountArgRaw = cliSpecifiedAmount ? cliAmountArgRaw : hookCfg?.amount?.trim();
-        const keepLastRaw = cliSpecifiedAmount ? cliKeepLastRaw : hookCfg?.keepLast?.trim();
-        if (amountTokensRaw && amountMessagesRaw) {
+        const amountTokensRaw = cliSpecifiedAmount ? cliAmountTokensRaw : auto?.amountTokens?.trim();
+        const amountMessagesRaw = cliSpecifiedAmount ? cliAmountMessagesRaw : auto?.amountMessages?.trim();
+        const amountArgRaw = cliSpecifiedAmount ? cliAmountArgRaw : undefined;
+        const keepLastRaw = cliSpecifiedAmount ? cliKeepLastRaw : auto?.keepLast?.trim();
+        if (cliAmountTokensRaw && cliAmountMessagesRaw) {
           process.stderr.write("[evs auto-compact] Use either --amount-messages or --amount-tokens (not both).\n");
           process.exitCode = 2;
           return;
         }
-        if (amountTokensRaw && amountArgRaw) {
+        if (cliAmountTokensRaw && cliAmountArgRaw) {
           process.stderr.write("[evs auto-compact] Use either --amount (messages) or --amount-tokens (not both).\n");
           process.exitCode = 2;
           return;
@@ -320,6 +347,7 @@ export function registerAutoCompactCommand(program: Command): void {
           amountRaw,
           model,
           busyTimeoutMs,
+          backup,
           ...(maxPromptTokens !== undefined ? { maxPromptTokens } : {}),
         };
         const sessionPath = await resolveClaudeSessionPathForAutoCompact({
@@ -329,7 +357,7 @@ export function registerAutoCompactCommand(program: Command): void {
         });
         if (sessionPath) params.sessionPath = sessionPath;
         if (keepLastRaw) params.keepLastRaw = keepLastRaw;
-        if (opts.notify) params.notify = true;
+        if (notify) params.notify = true;
 
         const out = await runClaudeAutoCompactOnce(params);
 

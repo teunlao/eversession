@@ -74,14 +74,10 @@ describe("cli analyze", () => {
       ].join("\n") + "\n";
     const path = await writeTempSession(session);
 
-    const res = await runAnalyze(["analyze", path, "--json"]);
+    const res = await runAnalyze(["analyze", path]);
     expect(res.exitCode).toBe(0);
     expect(res.stderr).toBe("");
-
-    const obj = JSON.parse(res.stdout) as { agent: string; messageTokens: number; messageTokensScope: string };
-    expect(obj.agent).toBe("claude");
-    expect(typeof obj.messageTokens).toBe("number");
-    expect(obj.messageTokens).toBeGreaterThanOrEqual(0);
-    expect(obj.messageTokensScope).toContain("Messages");
+    expect(res.stdout).toContain("agent=claude");
+    expect(res.stdout).toContain("messages_tokens=");
   });
 });

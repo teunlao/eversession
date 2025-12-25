@@ -2,17 +2,17 @@ import type { Command } from "commander";
 
 import { detectSession } from "../agents/detect.js";
 import { type AgentAdapter, getAdapterForDetect } from "../agents/registry.js";
-import { countBySeverity, type Issue } from "../core/issues.js";
-import { printIssuesHuman } from "./common.js";
-import { resolveSessionPathForCli } from "./session-ref.js";
+import { countBySeverity } from "../core/issues.js";
+import { resolveSessionForCli } from "./session-ref.js";
 
 export function registerAnalyzeCommand(program: Command): void {
   program
     .command("analyze")
-    .argument("[id]", "session path (*.jsonl) or Claude session UUID (defaults to active session when omitted)")
-    .option("--json", "output JSON report")
-    .action(async (id: string | undefined, opts: { json?: boolean }) => {
-      const resolved = await resolveSessionPathForCli({ commandLabel: "analyze", idArg: id });
+    .description("Summarize a session (format/tokens/structure; not lint)")
+    .argument("[id]", "session id or .jsonl path (omit under evs supervisor)")
+    .option("--agent <agent>", "claude|codex (optional; only needed when id is ambiguous)")
+    .action(async (id: string | undefined, opts: { agent?: string }) => {
+      const resolved = await resolveSessionForCli({ commandLabel: "analyze", refArg: id, agent: opts.agent });
       if (!resolved.ok) {
         process.stderr.write(resolved.error + "\n");
         process.exitCode = resolved.exitCode;
@@ -22,16 +22,8 @@ export function registerAnalyzeCommand(program: Command): void {
 
       const detected = await detectSession(sessionPath);
       if (detected.agent === "unknown") {
-        const report = {
-          agent: "unknown" as const,
-          confidence: detected.confidence,
-          notes: detected.notes,
-        };
-        if (opts.json) process.stdout.write(JSON.stringify(report, null, 2) + "\n");
-        else {
-          process.stdout.write("unknown\n");
-          for (const note of detected.notes) process.stdout.write(`- ${note}\n`);
-        }
+        process.stdout.write("unknown\n");
+        for (const note of detected.notes) process.stdout.write(`- ${note}\n`);
         process.exitCode = 2;
         return;
       }
@@ -43,13 +35,12 @@ export function registerAnalyzeCommand(program: Command): void {
       }
       const parsed = await adapter.parse(sessionPath);
       if (!parsed.ok) {
-        if (opts.json) process.stdout.write(JSON.stringify({ issues: parsed.issues }, null, 2) + "\n");
-        else printIssuesHuman(parsed.issues);
+        process.stderr.write("[evs analyze] Failed to parse session. Run `evs lint` for details.\n");
         process.exitCode = 1;
         return;
       }
 
-      const issues: Issue[] = [...parsed.issues, ...adapter.validate(parsed.session)];
+      const issues = [...parsed.issues, ...adapter.validate(parsed.session)];
       const detail = adapter.analyzeDetail
         ? await adapter.analyzeDetail(parsed.session, {})
         : { format: "unknown", analysis: adapter.analyze(parsed.session), summary: [] };
@@ -62,13 +53,9 @@ export function registerAnalyzeCommand(program: Command): void {
         issueCounts: countBySeverity(issues),
       };
 
-      if (opts.json) {
-        process.stdout.write(JSON.stringify(report, null, 2) + "\n");
-      } else {
-        for (const line of detail.summary) process.stdout.write(line + "\n");
-        const c = report.issueCounts;
-        process.stdout.write(`issues: errors=${c.error} warnings=${c.warning} info=${c.info}\n`);
-      }
-      process.exitCode = report.issueCounts.error > 0 ? 1 : 0;
+      for (const line of detail.summary) process.stdout.write(line + "\n");
+      const c = report.issueCounts;
+      process.stdout.write(`issues: errors=${c.error} warnings=${c.warning} info=${c.info}\n`);
+      process.exitCode = 0;
     });
 }

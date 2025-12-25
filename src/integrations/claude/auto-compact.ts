@@ -54,6 +54,7 @@ export type AutoCompactRunOptions = {
   model: ModelType;
   busyTimeoutMs: number;
   notify?: boolean;
+  backup?: boolean;
 };
 
 export type AutoCompactRunResult = {
@@ -434,6 +435,7 @@ export async function runClaudeAutoCompactOnce(opts: AutoCompactRunOptions): Pro
         readyAt: ts,
         thresholdTokens: opts.thresholdTokens,
         tokensAtTrigger: tokens,
+        backup: opts.backup ?? false,
         amountMode: opts.amountMode,
         amountRaw: opts.amountRaw,
         ...(opts.keepLastRaw ? { keepLastRaw: opts.keepLastRaw } : {}),
@@ -504,9 +506,9 @@ export async function runClaudeAutoCompactOnce(opts: AutoCompactRunOptions): Pro
       }
     }
 
-    // Create backup in new storage location
-    const backupPath = await createSessionBackup(sessionId, sessionPath);
-    await cleanupOldBackups(sessionId, 10);
+    const backupEnabled = opts.backup ?? false;
+    const backupPath = backupEnabled ? await createSessionBackup(sessionId, sessionPath) : undefined;
+    if (backupPath) await cleanupOldBackups(sessionId, 10);
 
     await writeFileAtomic(sessionPath, stringifyJsonl(finalValues));
 
@@ -528,7 +530,7 @@ export async function runClaudeAutoCompactOnce(opts: AutoCompactRunOptions): Pro
       ...(selectedRemoveTokens !== undefined ? { selectedRemoveTokens } : {}),
       ...(removeCount > 0 ? { removeCount } : {}),
       model: usedModel,
-      backupPath,
+      ...(backupPath ? { backupPath } : {}),
       changes: op.changes.changes.length,
       repairedChanges: repaired.changes.changes.length,
       preErrors,
@@ -721,8 +723,9 @@ export async function applyClaudePendingCompactOnReload(params: {
       finalValues = postFixed.nextValues;
     }
 
-    const backupPath = await createSessionBackup(params.sessionId, params.sessionPath);
-    await cleanupOldBackups(params.sessionId, 10);
+    const backupEnabled = pending.backup ?? false;
+    const backupPath = backupEnabled ? await createSessionBackup(params.sessionId, params.sessionPath) : undefined;
+    if (backupPath) await cleanupOldBackups(params.sessionId, 10);
 
     await writeFileAtomic(params.sessionPath, stringifyJsonl(finalValues));
 
@@ -745,7 +748,7 @@ export async function applyClaudePendingCompactOnReload(params: {
       keepLast: pending.keepLastRaw ?? null,
       ...(selection.removeCount > 0 ? { removeCount: selection.removeCount } : {}),
       model: usedModel,
-      backupPath,
+      ...(backupPath ? { backupPath } : {}),
       changes: op.changes.changes.length,
       repairedChanges: repaired.changes.changes.length,
       preErrors: repairedErrorCount,

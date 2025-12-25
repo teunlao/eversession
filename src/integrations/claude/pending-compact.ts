@@ -1,7 +1,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { fileExists, writeFileAtomic } from "../../core/fs.js";
-import { asNumber, asString, isJsonObject } from "../../core/json.js";
+import { asBoolean, asNumber, asString, isJsonObject } from "../../core/json.js";
 import { getSessionDir } from "./eversession-session-storage.js";
 
 export type PendingCompactStatus = "running" | "ready" | "failed" | "stale";
@@ -27,6 +27,7 @@ export type PendingCompact = {
   failedAt?: string;
   thresholdTokens?: number;
   tokensAtTrigger?: number;
+  backup?: boolean;
   amountMode?: "messages" | "tokens";
   amountRaw?: string;
   keepLastRaw?: string;
@@ -87,6 +88,7 @@ export function parsePendingCompact(value: unknown): PendingCompact | undefined 
   const failedAt = asString(value.failedAt);
   const thresholdTokens = asNumber(value.thresholdTokens);
   const tokensAtTrigger = asNumber(value.tokensAtTrigger);
+  const backup = asBoolean(value.backup);
   const amountModeRaw = asString(value.amountMode);
   const amountMode = amountModeRaw === "messages" || amountModeRaw === "tokens" ? amountModeRaw : undefined;
   const amountRaw = asString(value.amountRaw);
@@ -106,6 +108,7 @@ export function parsePendingCompact(value: unknown): PendingCompact | undefined 
     ...(failedAt ? { failedAt } : {}),
     ...(thresholdTokens !== undefined && Number.isFinite(thresholdTokens) ? { thresholdTokens } : {}),
     ...(tokensAtTrigger !== undefined && Number.isFinite(tokensAtTrigger) ? { tokensAtTrigger } : {}),
+    ...(backup !== undefined ? { backup } : {}),
     ...(amountMode ? { amountMode } : {}),
     ...(amountRaw ? { amountRaw } : {}),
     ...(keepLastRaw ? { keepLastRaw } : {}),

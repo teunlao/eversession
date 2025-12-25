@@ -5,19 +5,18 @@ import { join } from "node:path";
 import { Command } from "commander";
 import { describe, expect, it, vi } from "vitest";
 
-import { registerStatuslineCommand } from "./statusline.js";
+import { registerUninstallCommand } from "./uninstall.js";
 
-async function runStatusline(
-  args: string[],
-  cwd: string,
-): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+async function runUninstall(args: string[], cwd: string): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const stdoutChunks: string[] = [];
   const stderrChunks: string[] = [];
-  const spyLog = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
-    stdoutChunks.push(args.map((a) => String(a)).join(" ") + "\n");
+  const spyOut = vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+    stdoutChunks.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+    return true;
   });
-  const spyConsoleError = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
-    stderrChunks.push(args.map((a) => String(a)).join(" ") + "\n");
+  const spyErr = vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+    stderrChunks.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+    return true;
   });
 
   const spyCwd = vi.spyOn(process, "cwd").mockReturnValue(cwd);
@@ -28,20 +27,20 @@ async function runStatusline(
   try {
     const program = new Command();
     program.exitOverride();
-    registerStatuslineCommand(program);
+    registerUninstallCommand(program);
     await program.parseAsync(["node", "evs", ...args]);
 
     const exitCode = process.exitCode ?? 0;
     return { stdout: stdoutChunks.join(""), stderr: stderrChunks.join(""), exitCode };
   } finally {
     process.exitCode = prevExitCode;
-    spyLog.mockRestore();
-    spyConsoleError.mockRestore();
+    spyOut.mockRestore();
+    spyErr.mockRestore();
     spyCwd.mockRestore();
   }
 }
 
-describe("cli statusline uninstall", () => {
+describe("cli uninstall --agent claude --statusline", () => {
   it("removes EverSession statusLine from project settings", async () => {
     const dir = await mkdtemp(join(tmpdir(), "context-reactor-statusline-"));
     const claudeDir = join(dir, ".claude");
@@ -54,10 +53,10 @@ describe("cli statusline uninstall", () => {
       "utf8",
     );
 
-    const res = await runStatusline(["statusline", "uninstall"], dir);
+    const res = await runUninstall(["uninstall", "--agent", "claude", "--statusline"], dir);
     expect(res.exitCode).toBe(0);
     expect(res.stderr).toBe("");
-    expect(res.stdout).toContain("Uninstalled EverSession status line");
+    expect(res.stdout).toContain("[evs uninstall] Claude statusline: Uninstalled");
 
     const updated = JSON.parse(await readFile(settingsPath, "utf8")) as Record<string, unknown>;
     expect("statusLine" in updated).toBe(false);
@@ -72,10 +71,10 @@ describe("cli statusline uninstall", () => {
     const initial = { statusLine: { type: "command", command: "echo hi" }, other: 123 };
     await writeFile(settingsPath, JSON.stringify(initial, null, 2), "utf8");
 
-    const res = await runStatusline(["statusline", "uninstall"], dir);
+    const res = await runUninstall(["uninstall", "--agent", "claude", "--statusline"], dir);
     expect(res.exitCode).toBe(0);
     expect(res.stderr).toBe("");
-    expect(res.stdout).toContain("No EverSession status line to uninstall");
+    expect(res.stdout).toContain("[evs uninstall] Claude statusline: Not installed");
 
     const after = JSON.parse(await readFile(settingsPath, "utf8")) as Record<string, unknown>;
     expect(after).toEqual(initial);

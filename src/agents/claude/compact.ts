@@ -31,8 +31,8 @@ export async function prepareClaudeCompact(
   session: ClaudeSession,
   params: CompactPrepareParams,
 ): Promise<CompactPrepareResult> {
-  const llmModel = parseModelType(params.model);
-  if (params.model && !llmModel) {
+  const requestedModel = parseModelType(params.model);
+  if (params.model && !requestedModel) {
     return {
       ok: false,
       exitCode: 2,
@@ -47,21 +47,7 @@ export async function prepareClaudeCompact(
     };
   }
 
-  const hasManualSummary = params.summary && params.summary.length > 0;
-  if (!hasManualSummary && !llmModel) {
-    return {
-      ok: false,
-      exitCode: 2,
-      issues: [
-        {
-          severity: "error",
-          code: "core.compact_missing_summary",
-          message: "[Core] `compact` requires --model <haiku|sonnet|opus> or --summary <text>.",
-          location: { kind: "file", path: session.path },
-        },
-      ],
-    };
-  }
+  const llmModel: ModelType = requestedModel ?? "haiku";
 
   const entries = session.lines.filter((l): l is ClaudeEntryLine => l.kind === "entry");
   const visibleMessages = getChainMessages(entries);
@@ -116,7 +102,7 @@ export async function prepareClaudeCompact(
   }
 
   let finalSummary = params.summary;
-  if (!finalSummary && llmModel) {
+  if (!finalSummary) {
     const entriesToCompact = visibleMessages.slice(0, removeCount);
     if (params.log) params.log(`Generating summary via ${llmModel}...`);
     try {

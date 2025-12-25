@@ -3,10 +3,96 @@ import { asString, isJsonObject } from "../../core/json.js";
 import { type CountOrPercent, parseCountOrPercent } from "../../core/spec.js";
 import type { CompactPrepareParams, CompactPrepareResult } from "../compact.js";
 import type { CodexSession, CodexWrappedLine } from "./session.js";
+import { buildCompactPrompt, type ModelType } from "../claude/summary.js";
+import { getCodexMessageText } from "./text.js";
 
 export type CompactResult = { nextValues: unknown[]; changes: ChangeSet };
 
-export function prepareCodexCompact(session: CodexSession, params: CompactPrepareParams): CompactPrepareResult {
+function isModelType(value: string | undefined): value is ModelType {
+  return value === "haiku" || value === "sonnet" || value === "opus";
+}
+
+function formatCodexResponseItemForPrompt(payload: Record<string, unknown>): string | undefined {
+  const t = asString(payload.type);
+  if (!t) return undefined;
+
+  if (t === "message") {
+    const role = asString(payload.role);
+    if (!role) return undefined;
+    const text = getCodexMessageText(payload).trim();
+    if (text.length === 0) return undefined;
+    return `[${role}]: ${text}`;
+  }
+
+  const callTypes = new Set(["function_call", "custom_tool_call", "local_shell_call"]);
+  if (callTypes.has(t)) {
+    const name = asString(payload.name) ?? t;
+    return `[assistant]: [tool: ${name}]\n${JSON.stringify(payload)}`;
+  }
+
+  const outputTypes = new Set(["function_call_output", "custom_tool_call_output"]);
+  if (outputTypes.has(t)) {
+    const callId = asString(payload.call_id);
+    const label = callId ? `${t} ${callId}` : t;
+    return `[assistant]: [result: ${label}]\n${JSON.stringify(payload)}`;
+  }
+
+  return undefined;
+}
+
+async function generateSummaryFromPrompt(prompt: string, model: ModelType): Promise<string> {
+  let summary = "";
+  try {
+    const { query } = await import("@anthropic-ai/claude-agent-sdk");
+    for await (const message of query({
+      prompt,
+      options: { model, allowedTools: [], permissionMode: "bypassPermissions" },
+    })) {
+      if (message.type === "assistant" && message.message?.content) {
+        for (const block of message.message.content) {
+          if ("text" in block && typeof block.text === "string") summary += block.text;
+        }
+      }
+    }
+  } catch (error) {
+    throw new Error(`LLM call failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+  }
+  if (!summary.trim()) throw new Error("Empty summary generated");
+  return summary.trim();
+}
+
+function computeCodexLinesToSummarize(session: CodexSession, removeCount: number): Set<number> {
+  const { candidates, pinned } = getCodexCompactionParts(session);
+  const toRemove = new Set<number>();
+
+  for (const line of pinned.lines) toRemove.add(line);
+  for (const line of candidates.slice(0, removeCount)) toRemove.add(line.line);
+
+  const { calls, outputs } = collectCallMaps(session);
+
+  for (const [callId, call] of calls.entries()) {
+    if (!toRemove.has(call.line)) continue;
+    const out = outputs.get(callId);
+    if (!out) continue;
+    for (const line of out.lines) toRemove.add(line);
+  }
+
+  for (const [callId, out] of outputs.entries()) {
+    const call = calls.get(callId);
+    const callRemoved = call ? toRemove.has(call.line) : true;
+    if (callRemoved || !isMatchingPair(call, out)) {
+      for (const line of out.lines) toRemove.add(line);
+    }
+  }
+
+  // Only response_item lines are useful for summarization.
+  const wrapped = session.lines.filter((l): l is CodexWrappedLine => l.kind === "wrapped");
+  const responseItems = wrapped.filter((l) => l.type === "response_item" && isJsonObject(l.payload));
+  const responseLines = new Set<number>(responseItems.map((l) => l.line));
+  return new Set([...toRemove].filter((line) => responseLines.has(line)));
+}
+
+export async function prepareCodexCompact(session: CodexSession, params: CompactPrepareParams): Promise<CompactPrepareResult> {
   if (params.amountTokensRaw) {
     return {
       ok: false,
@@ -22,21 +108,6 @@ export function prepareCodexCompact(session: CodexSession, params: CompactPrepar
     };
   }
 
-  if (!params.summary || params.summary.length === 0) {
-    return {
-      ok: false,
-      exitCode: 2,
-      issues: [
-        {
-          severity: "error",
-          code: "core.codex_llm_not_supported",
-          message: "[Core] Codex LLM summary not yet supported. Use --summary <text>.",
-          location: { kind: "file", path: session.path },
-        },
-      ],
-    };
-  }
-
   if (session.format !== "wrapped") {
     return {
       ok: false,
@@ -45,7 +116,7 @@ export function prepareCodexCompact(session: CodexSession, params: CompactPrepar
         {
           severity: "error",
           code: "core.codex_compact_requires_wrapped",
-          message: "[Core] Codex `compact` requires wrapped rollout sessions. Run `migrate --to codex-wrapped` first.",
+          message: "[Core] Codex `compact` requires wrapped sessions. Run `evs lint --fix` first.",
           location: { kind: "file", path: session.path },
         },
       ],
@@ -54,12 +125,104 @@ export function prepareCodexCompact(session: CodexSession, params: CompactPrepar
 
   const amount = parseCountOrPercent(params.amountMessagesRaw ?? params.amountRaw);
 
+  const keepLast = params.keepLast ?? false;
+  const candidates = getCodexCompactionParts(session).candidates;
+  let removeCount = 0;
+  if (keepLast) {
+    if (amount.kind !== "count") {
+      return {
+        ok: false,
+        exitCode: 2,
+        issues: [
+          {
+            severity: "error",
+            code: "core.compact_invalid_keep_last",
+            message: "[Codex] --keep-last requires an integer count (percent not supported).",
+            location: { kind: "file", path: session.path },
+          },
+        ],
+      };
+    }
+    removeCount = Math.max(0, candidates.length - amount.count);
+  } else if (amount.kind === "percent") {
+    removeCount = Math.floor(candidates.length * (amount.percent / 100));
+  } else {
+    removeCount = Math.max(0, amount.count);
+  }
+
+  if (removeCount <= 0) {
+    return {
+      ok: true,
+      plan: {
+        amount,
+        summary: params.summary ?? "",
+        options: { keepLast },
+      },
+    };
+  }
+
+  const modelRaw = params.model?.trim();
+  const model: ModelType = isModelType(modelRaw) ? modelRaw : "haiku";
+
+  let summary = params.summary;
+  if (!summary || summary.trim().length === 0) {
+    const toSummarize = computeCodexLinesToSummarize(session, removeCount);
+    const wrapped = session.lines.filter((l): l is CodexWrappedLine => l.kind === "wrapped");
+    const responseItems = wrapped.filter(
+      (l): l is CodexWrappedLine & { payload: Record<string, unknown> } =>
+        l.type === "response_item" && isJsonObject(l.payload) && toSummarize.has(l.line),
+    );
+
+    const formatted = responseItems
+      .map((l) => formatCodexResponseItemForPrompt(l.payload))
+      .filter((line): line is string => typeof line === "string" && line.trim().length > 0)
+      .join("\n\n");
+
+    const sourceLines = formatted.split("\n").length;
+    const targetLines = Math.max(20, Math.floor(sourceLines * 0.2));
+    const prompt = buildCompactPrompt(formatted, sourceLines, targetLines);
+
+    if (params.log) params.log(`Generating summary via ${model}...`);
+    try {
+      summary = await generateSummaryFromPrompt(prompt, model);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return {
+        ok: false,
+        exitCode: 1,
+        issues: [
+          {
+            severity: "error",
+            code: "core.llm_failed",
+            message: `[Core] LLM summary generation failed: ${message}`,
+            location: { kind: "file", path: session.path },
+          },
+        ],
+      };
+    }
+  }
+
+  if (!summary || summary.trim().length === 0) {
+    return {
+      ok: false,
+      exitCode: 1,
+      issues: [
+        {
+          severity: "error",
+          code: "core.no_summary",
+          message: "[Core] No summary available.",
+          location: { kind: "file", path: session.path },
+        },
+      ],
+    };
+  }
+
   return {
     ok: true,
     plan: {
       amount,
-      summary: params.summary,
-      options: { keepLast: params.keepLast ?? false },
+      summary,
+      options: { keepLast },
     },
   };
 }

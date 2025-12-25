@@ -4,6 +4,8 @@ import * as path from "node:path";
 import { fileExists } from "../../core/fs.js";
 import { asString, isJsonObject } from "../../core/json.js";
 import { deriveSessionIdFromPath, lockPathForSession } from "../../core/paths.js";
+import { resolveEvsConfigForCwd } from "../../core/project-config.js";
+import { parseTokenThreshold } from "../../core/threshold.js";
 import { getClaudeStatuslineEnvDump, resolveClaudeProjectDirFromEnv } from "./context.js";
 import { getLogPath } from "./eversession-session-storage.js";
 import { readPendingCompact } from "./pending-compact.js";
@@ -13,8 +15,6 @@ import {
   defaultStatuslineDumpPath,
   extractClaudeStatuslineFields,
   isEvsStatuslineCommand,
-  readAutoCompactConfigFromProjectSettings,
-  readAutoCompactThresholdFromProjectSettings,
   readClaudeAutoCompactSignals,
 } from "./statusline.js";
 import { readClaudeSupervisorEnv } from "./supervisor-control.js";
@@ -219,7 +219,18 @@ export async function runClaudeStatuslineCommand(opts: StatuslineOptions): Promi
   const thresholdFromLog = signals.lastStart?.threshold ?? signals.lastResult?.threshold;
   const threshold =
     thresholdFromLog ??
-    (claudeProjectDir ? await readAutoCompactThresholdFromProjectSettings(claudeProjectDir) : undefined);
+    (claudeProjectDir
+      ? await (async () => {
+          try {
+            const cfg = await resolveEvsConfigForCwd(claudeProjectDir);
+            const raw = cfg.config.claude?.autoCompact?.threshold?.trim();
+            if (!raw) return undefined;
+            return parseTokenThreshold(raw);
+          } catch {
+            return undefined;
+          }
+        })()
+      : undefined);
 
   // "COMPACTING" should mean "actual compaction expected / in progress", not merely "auto-compact check is running".
   const overThreshold = tokens !== undefined && threshold !== undefined ? tokens >= threshold : false;
@@ -247,14 +258,14 @@ export async function runClaudeStatuslineCommand(opts: StatuslineOptions): Promi
     !recentlyAttempted;
   if (shouldTriggerPrecompute) {
     try {
-      const config = claudeProjectDir ? await readAutoCompactConfigFromProjectSettings(claudeProjectDir) : undefined;
-      const amountTokens = config?.amountTokens;
-      const amountMessages = config?.amountMessages;
-      const amount = config?.amount;
-      const keepLast = config?.keepLast;
-      const maxTokens = config?.maxTokens;
-      const model = config?.model ?? "haiku";
-      const busyTimeout = config?.busyTimeout ?? "10s";
+      const cfg = claudeProjectDir ? await resolveEvsConfigForCwd(claudeProjectDir) : undefined;
+      const auto = cfg?.config.claude?.autoCompact;
+      const amountTokens = auto?.amountTokens;
+      const amountMessages = auto?.amountMessages;
+      const keepLast = auto?.keepLast;
+      const maxTokens = auto?.maxTokens;
+      const model = auto?.model ?? "haiku";
+      const busyTimeout = auto?.busyTimeout ?? "10s";
       const defaultAmountTokens = "40%";
       const defaultAmountMessages = "25%";
 
@@ -278,17 +289,15 @@ export async function runClaudeStatuslineCommand(opts: StatuslineOptions): Promi
         const hasAmountTokens = amountTokens !== undefined && amountTokens.trim().length > 0;
 
         if (keepLastRaw !== undefined && keepLastRaw.trim().length > 0 && !hasAmountTokens) {
-          args.push("--amount-messages", amountMessages ?? amount ?? defaultAmountMessages);
+          args.push("--amount-messages", amountMessages ?? defaultAmountMessages);
           args.push("--keep-last", keepLastRaw);
-        } else if (amountTokens) {
-          args.push("--amount-tokens", amountTokens);
-        } else if (amountMessages) {
-          args.push("--amount-messages", amountMessages);
-        } else if (amount) {
-          args.push("--amount-messages", amount);
-        } else {
-          args.push("--amount-tokens", defaultAmountTokens);
-        }
+	        } else if (amountTokens) {
+	          args.push("--amount-tokens", amountTokens);
+	        } else if (amountMessages) {
+	          args.push("--amount-messages", amountMessages);
+	        } else {
+	          args.push("--amount-tokens", defaultAmountTokens);
+	        }
 
         spawnDetached(args);
       }

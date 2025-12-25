@@ -4,7 +4,6 @@ import type { Command } from "commander";
 import { parseDurationMs } from "../core/duration.js";
 import { executeCodexSupervisorCommand } from "../integrations/codex/cli-supervisor.js";
 import { type CodexAutoCompactAmountMode, runCodexAutoCompactOnce } from "../integrations/codex/auto-compact.js";
-import { installCodexNotify, uninstallCodexNotify } from "../integrations/codex/config.js";
 import { defaultCodexSessionsDir } from "../integrations/codex/paths.js";
 import { discoverCodexSessionReport } from "../integrations/codex/session-discovery.js";
 import {
@@ -17,8 +16,7 @@ import { readCodexSupervisorEnv, readSupervisorHandshake, writeSupervisorHandsha
 import { isClaudeAutoCompactModel } from "../integrations/claude/auto-compact.js";
 import type { ModelType } from "../agents/claude/summary.js";
 import { parseCountOrPercent, parseTokensOrPercent, type TokensOrPercent } from "../core/spec.js";
-import type { EvsProjectConfig } from "../core/project-config.js";
-import { loadEvsProjectConfig } from "../core/project-config.js";
+import { resolveEvsConfigForCwd, type EvsConfig } from "../core/project-config.js";
 
 function parseNotifyArgs(args: string[]): {
   notificationJson?: string;
@@ -210,10 +208,10 @@ function spawnDetached(argv: string[]): void {
   child.unref();
 }
 
-async function tryLoadProjectConfig(cwd: string): Promise<EvsProjectConfig | undefined> {
+async function tryLoadConfig(cwd: string): Promise<EvsConfig | undefined> {
   try {
-    const loaded = await loadEvsProjectConfig(cwd);
-    return loaded?.config;
+    const loaded = await resolveEvsConfigForCwd(cwd);
+    return loaded.config;
   } catch {
     return undefined;
   }
@@ -329,7 +327,7 @@ async function runCodexNotify(args: string[]): Promise<void> {
     const supervisor = readCodexSupervisorEnv();
     // Safety: only do rolling compaction when Codex is supervised by EVS (safe reload boundary).
     if (supervisor) {
-      const cfg = await tryLoadProjectConfig(event.cwd);
+      const cfg = await tryLoadConfig(event.cwd);
       const cfgCodex = cfg?.codex;
       const cfgAuto = cfgCodex?.autoCompact;
       if (cfgAuto?.enabled === false) {
@@ -428,46 +426,6 @@ async function runCodexNotify(args: string[]): Promise<void> {
   }
 
   process.exitCode = 0;
-}
-
-function parseInstallArgs(args: string[]): { force: boolean } {
-  let force = false;
-  for (const arg of args) {
-    if (arg === "--force" || arg === "-f") force = true;
-  }
-  return { force };
-}
-
-async function runCodexInstall(args: string[]): Promise<void> {
-  try {
-    const parsed = parseInstallArgs(args);
-    const res = await installCodexNotify({ force: parsed.force });
-
-    if (res.changed) {
-      console.log(`✓ Installed Codex notify for EverSession (${res.configPath}).`);
-      console.log("Restart Codex for changes to take effect.");
-    } else {
-      console.log(`○ Codex notify already configured (${res.configPath}).`);
-    }
-  } catch (error) {
-    console.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`);
-    process.exitCode = 1;
-  }
-}
-
-async function runCodexUninstall(): Promise<void> {
-  try {
-    const res = await uninstallCodexNotify({});
-    if (res.changed) {
-      console.log(`✓ Uninstalled Codex notify for EverSession (${res.configPath}).`);
-      console.log("Restart Codex for changes to take effect.");
-    } else {
-      console.log(`○ No EverSession Codex notify to uninstall (${res.configPath}).`);
-    }
-  } catch (error) {
-    console.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`);
-    process.exitCode = 1;
-  }
 }
 
 function parseAutoCompactArgs(args: string[]): {
@@ -657,8 +615,14 @@ async function runCodexAutoCompact(args: string[]): Promise<void> {
   const parsed = parseAutoCompactArgs(rest);
   const cwd = parsed.cwd ?? process.cwd();
   const codexSessionsDir = parsed.codexSessionsDir ?? defaultCodexSessionsDir();
-  const cfg = await tryLoadProjectConfig(cwd);
+  const cfg = await tryLoadConfig(cwd);
   const cfgAuto = cfg?.codex?.autoCompact;
+
+  if (!readCodexSupervisorEnv()) {
+    // Safety: never auto-compact without an active EVS supervisor.
+    process.exitCode = 0;
+    return;
+  }
 
   const sessionId =
     parsed.sessionId ??
@@ -729,6 +693,7 @@ async function runCodexAutoCompact(args: string[]): Promise<void> {
   const modelRaw = parsed.model?.trim() ?? cfgAuto?.model?.trim();
   const model: ModelType = isClaudeAutoCompactModel(modelRaw) ? modelRaw : "haiku";
   const busyTimeoutMs = parseDurationMs(parsed.busyTimeout?.trim() ?? cfgAuto?.busyTimeout?.trim() ?? "10s");
+  const backup = cfgAuto?.backup ?? cfg?.backup ?? false;
 
   const out = await runCodexAutoCompactOnce({
     cwd,
@@ -739,6 +704,7 @@ async function runCodexAutoCompact(args: string[]): Promise<void> {
     amountRaw,
     model,
     busyTimeoutMs,
+    backup,
   });
 
   process.exitCode =
@@ -767,17 +733,7 @@ export function registerCodexCommand(program: Command): void {
         return;
       }
 
-      if (args[0] === "install") {
-        await runCodexInstall(args.slice(1));
-        return;
-      }
-
-      if (args[0] === "uninstall") {
-        await runCodexUninstall();
-        return;
-      }
-
-      const cfg = await tryLoadProjectConfig(process.cwd());
+      const cfg = await tryLoadConfig(process.cwd());
       const reloadFlag = opts.reload ?? cfg?.codex?.reload;
       const exitCode = await executeCodexSupervisorCommand({
         reloadFlag,

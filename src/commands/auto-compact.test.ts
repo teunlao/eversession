@@ -44,37 +44,30 @@ describe("cli auto-compact", () => {
     EVS_CLAUDE_CONTROL_DIR: process.env.EVS_CLAUDE_CONTROL_DIR,
     EVS_CLAUDE_RUN_ID: process.env.EVS_CLAUDE_RUN_ID,
     EVS_CLAUDE_RELOAD_MODE: process.env.EVS_CLAUDE_RELOAD_MODE,
+    EVS_CONFIG_PATH: process.env.EVS_CONFIG_PATH,
   };
 
   afterEach(() => {
     process.env.EVS_CLAUDE_CONTROL_DIR = prevEnv.EVS_CLAUDE_CONTROL_DIR;
     process.env.EVS_CLAUDE_RUN_ID = prevEnv.EVS_CLAUDE_RUN_ID;
     process.env.EVS_CLAUDE_RELOAD_MODE = prevEnv.EVS_CLAUDE_RELOAD_MODE;
+    process.env.EVS_CONFIG_PATH = prevEnv.EVS_CONFIG_PATH;
   });
 
-  it("infers session path from supervisor handshake and defaults from .claude/settings.json", async () => {
+  it("infers session path from supervisor handshake and defaults from .evs/config.json", async () => {
     const prevCwd = process.cwd();
 
     const root = await mkdtemp(join(tmpdir(), "evs-claude-auto-compact-cli-"));
     const projectDir = join(root, "repo");
-    await fs.mkdir(join(projectDir, ".claude"), { recursive: true });
+    await fs.mkdir(join(projectDir, ".evs"), { recursive: true });
 
     await writeFile(
-      join(projectDir, ".claude", "settings.json"),
+      join(projectDir, ".evs", "config.json"),
       JSON.stringify(
         {
-          hooks: {
-            Stop: [
-              {
-                hooks: [
-                  {
-                    type: "command",
-                    command:
-                      "evs auto-compact start --threshold 150k --amount-tokens 30% --model haiku --busy-timeout 10s",
-                  },
-                ],
-              },
-            ],
+          schemaVersion: 1,
+          claude: {
+            autoCompact: { threshold: "150k", amountTokens: "30%", model: "haiku", busyTimeout: "10s" },
           },
         },
         null,
@@ -82,6 +75,7 @@ describe("cli auto-compact", () => {
       ),
       "utf8",
     );
+    process.env.EVS_CONFIG_PATH = join(root, "global-config-does-not-exist.json");
 
     const sessionId = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
     const transcriptPath = join(root, `${sessionId}.jsonl`);
@@ -138,4 +132,3 @@ describe("cli auto-compact", () => {
     }
   });
 });
-

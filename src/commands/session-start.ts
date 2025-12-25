@@ -4,8 +4,8 @@ import { runClaudeSessionStartHook } from "../integrations/claude/session-start.
 
 export function registerSessionStartCommand(program: Command): void {
   program
-    .command("session-start")
-    .description("Claude Code hook helper: log session start/resume to the EverSession session log")
+    .command("session-start", { hidden: true })
+    .description("Internal: Claude Code hook helper (log session start/resume)")
     .action(async () => {
       await runClaudeSessionStartHook();
     });

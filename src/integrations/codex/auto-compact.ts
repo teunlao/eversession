@@ -42,6 +42,7 @@ export type CodexAutoCompactRunOptions = {
   amountRaw: string;
   model: ModelType;
   busyTimeoutMs: number;
+  backup?: boolean;
 };
 
 export type CodexAutoCompactRunResult = {
@@ -457,6 +458,7 @@ export async function runCodexAutoCompactOnce(opts: CodexAutoCompactRunOptions):
         readyAt: ts,
         thresholdTokens: threshold,
         tokensAtTrigger: tokens,
+        backup: opts.backup ?? false,
         amountMode: opts.amountMode,
         amountRaw: opts.amountRaw,
         model: usedModel,
@@ -525,8 +527,11 @@ export async function runCodexAutoCompactOnce(opts: CodexAutoCompactRunOptions):
       return { result: "aborted_validation", usedModel, sessionPath, tokens, threshold, issues: postIssues };
     }
 
-    await createSessionBackup(opts.sessionId, sessionPath);
-    await cleanupOldBackups(opts.sessionId, 10);
+    const backupEnabled = opts.backup ?? false;
+    if (backupEnabled) {
+      await createSessionBackup(opts.sessionId, sessionPath);
+      await cleanupOldBackups(opts.sessionId, 10);
+    }
     await writeFileAtomic(sessionPath, stringifyJsonl(compacted.nextValues));
 
     try {
@@ -702,8 +707,11 @@ export async function applyCodexPendingCompactOnReload(params: {
       return { applied: false, reason: "aborted_validation" };
     }
 
-    await createSessionBackup(params.sessionId, params.sessionPath);
-    await cleanupOldBackups(params.sessionId, 10);
+    const backupEnabled = pending.backup ?? false;
+    if (backupEnabled) {
+      await createSessionBackup(params.sessionId, params.sessionPath);
+      await cleanupOldBackups(params.sessionId, 10);
+    }
     await writeFileAtomic(params.sessionPath, stringifyJsonl(op.nextValues));
 
     await clearCodexPendingCompact(params.sessionId);

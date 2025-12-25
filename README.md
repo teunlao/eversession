@@ -28,7 +28,7 @@ Threshold = 100k tokens (Claude: /context → Messages)
           v                              v
    ┌─────────────────────────────┐   ┌────────────────────────────┐
    │ Auto reload + resume        │   │ Manual reload + resume     │
-   │                             │   │   ! evs reload             │
+   │                             │   │   restart manually         │
    └─────────────────────────────┘   └────────────────────────────┘
              │                                   │
              │                                   │
@@ -64,146 +64,48 @@ evs --help
 
 ## Setup (recommended)
 
-### 1) Install Claude Code hooks (project-local)
+### Claude Code
 
-Run this in the project directory you use with Claude Code:
-
-```bash
-evs hooks install
-```
-
-This updates `<project>/.claude/settings.json`. Restart Claude Code after installing hooks.
-
-Once hooks are installed, you can also run EVS commands inside Claude Code using bash mode, and omit the session id:
+Run this in the project directory you use with Claude Code (writes `<project>/.claude/settings.json`):
 
 ```bash
-! evs log
-! evs analyze
+evs install --agent claude
 ```
 
-### 2) Run Claude Code under EVS supervisor (best experience)
+Then run Claude under the EVS supervisor:
 
 ```bash
 evs claude --reload auto
 ```
 
-If `claude` is not on your `PATH`, point EVS to the executable:
+If `claude` isn’t on your `PATH`:
 
 ```bash
 EVS_CLAUDE_BIN=/path/to/claude evs claude --reload auto
 ```
 
-From here you just use Claude Code normally. EVS auto-compact triggers on `Stop` when you cross the configured token threshold.
-In supervised mode it precomputes first and applies at the reload boundary.
+### Codex
 
-### 3) Optional: install status line (nice UX)
-
-```bash
-evs statusline install
-```
-
-The status line is shown whenever it is configured in Claude settings. Restart Claude Code if needed.
-
-## Why status line matters (beyond UI)
-
-- It shows `current/threshold` so you can see when compaction is about to trigger.
-- In supervised mode it can best-effort trigger background precompute early (so the pending compact is ready sooner).
-
-## Why supervisor mode matters
-
-- Applies compaction at the reload boundary (when Claude is not writing), reducing race risks.
-- Enables `evs reload` to work as a real 1-command reload (instead of printing manual instructions).
-
-## Configure auto-compact
-
-EVS reads your config from the `Stop` hook command in `<project>/.claude/settings.json`.
-
-The default hook installed by `evs hooks install` looks like this:
-
-```json
-{
-  "type": "command",
-  "command": "evs auto-compact start --threshold 140k --amount-tokens 40% --model haiku --busy-timeout 10s --notify",
-  "timeout": 90
-}
-```
-
-Change `--threshold`, `--amount-tokens`, and `--model` to match your workflow. Use `--amount-messages` for message-based removal.
-
-## Token counting scope (important)
-
-EVS targets Claude Code `/context → Messages` tokens (the visible message chain).  
-It does not measure the full runtime/system context used by Claude Code.
-
-## Codex (experimental)
-
-### Project defaults (.evs/config.json)
-
-To avoid repeating flags, create a project config (and edit it anytime):
+Run Codex under the EVS supervisor:
 
 ```bash
-evs config init
-```
-
-This writes `.evs/config.json`. Defaults (example):
-
-```json
-{
-  "schemaVersion": 1,
-  "codex": {
-    "reload": "auto",
-    "autoCompact": {
-      "enabled": true,
-      "threshold": "70%",
-      "amountTokens": "40%",
-      "model": "haiku",
-      "busyTimeout": "10s"
-    }
-  }
-}
-```
-
-Remove it anytime:
-
-```bash
-evs config remove
-```
-
-### Recommended: run Codex supervised (reload + safe apply)
-
-```bash
-evs codex
-# or:
 evs codex --reload auto
 ```
 
-If `codex` is not on your `PATH`, point EVS to the executable:
+If `codex` isn’t on your `PATH`:
 
 ```bash
 EVS_CODEX_BIN=/path/to/codex evs codex --reload auto
 ```
 
-Notes:
-
-- `evs codex` launches Codex but injects the `notify` hook via `--config ...` (no edits to `~/.codex/config.toml`).
-- Auto-compact is computed after turns and applied only at the reload boundary, then Codex resumes the same thread.
-
-Manual reload (works in both Claude and Codex contexts):
+If you run Codex directly (without `evs codex`), install the notify hook once:
 
 ```bash
-evs reload
-```
-
-### Optional: install `notify` when running Codex directly
-
-If you run Codex directly (without `evs codex`), install the notify hook once so EVS can resolve the active session:
-
-```bash
-evs codex install
-# If you already have `notify = ...` configured:
-evs codex install --force
+evs install --agent codex
+# If you already have notify configured:
+evs install --agent codex --force
 # later:
-evs codex uninstall
+evs uninstall --agent codex
 ```
 
 This edits `~/.codex/config.toml` (or `$CODEX_HOME/config.toml`) and adds/removes:
@@ -212,62 +114,116 @@ This edits `~/.codex/config.toml` (or `$CODEX_HOME/config.toml`) and adds/remove
 notify = ["evs", "codex", "notify"]
 ```
 
-Restart Codex after install/uninstall for changes to take effect.
+## Token counting scope (important)
 
-### Cleanup (optional)
+EVS targets Claude Code `/context → Messages` tokens (the visible message chain).  
+It does not measure the full runtime/system context used by Claude Code.
 
-- Forget Codex “current session” mapping: delete `~/.claude/.eversession/codex-state.json`
-- Remove EVS logs/pending compacts for a Codex thread: delete `~/.claude/.eversession/sessions/<thread-id>/`
+## Config
 
-## Useful commands (later)
+EVS reads config from:
+
+- Global: `~/.evs/config.json`
+- Local: `<project>/.evs/config.json` (deep-merged; local overrides global)
+
+View the resolved config (plus diagnostics about where values come from):
 
 ```bash
-# Many commands accept an optional [id]. If you run EVS inside Claude Code
-# (hooks / bash mode), EVS can often resolve the active session automatically.
-# Outside Claude Code, pass an explicit UUID or a .jsonl path.
+evs config show
+```
 
-# Resolve the active session for this CWD
+Minimal example:
+
+```json
+{
+  "schemaVersion": 1,
+  "backup": false,
+  "claude": {
+    "reload": "manual",
+    "autoCompact": {
+      "enabled": true,
+      "threshold": "140k",
+      "amountTokens": "40%",
+      "amountMessages": "25%",
+      "model": "haiku",
+      "busyTimeout": "10s",
+      "notify": false,
+      "backup": false
+    }
+  },
+  "codex": {
+    "reload": "manual",
+    "autoCompact": {
+      "enabled": true,
+      "threshold": "70%",
+      "amountTokens": "40%",
+      "amountMessages": "35%",
+      "model": "haiku",
+      "busyTimeout": "10s",
+      "notify": false,
+      "backup": false
+    }
+  }
+}
+```
+
+Notes:
+- Most users only need to tweak `threshold`, `amountTokens`, and `model`.
+- Backups are opt-in: use `backup: true` (or per-agent `autoCompact.backup: true`), or `--backup` on write commands.
+
+## Useful commands
+
+Inside `evs claude` / `evs codex` (supervisor mode), you can omit the session ref:
+
+```bash
 evs session
-
-# Open the active transcript (or show the path)
-evs open
-
-# Show EVS auto-compact history (requires that EVS has already written a log)
 evs log
-
-# Analyze / validate / fix
 evs analyze
-evs validate
-evs fix
+evs lint --fix
+evs compact
+```
 
-# Manual compact
-evs compact 25%
+Outside the supervisor, pass an explicit ref (UUID or `.jsonl` path). Use `--agent claude|codex` only when a UUID is ambiguous:
 
-# Outside Claude Code examples
-evs analyze /full/path/to/session.jsonl
-evs compact /full/path/to/session.jsonl 25%
+```bash
+evs session <ref>
+evs log <ref>
+evs compact <ref>
+evs remove <ref> 10,11,12
+evs fork <ref>
+evs pin <name> <ref>
+```
+
+## Uninstall
+
+Uninstall removes only EVS-installed integration artifacts (hooks/statusline/notify). It does not delete `~/.evs/config.json`.
+
+```bash
+evs uninstall --agent claude
+evs uninstall --agent claude --global
+evs uninstall --agent codex
 ```
 
 ## Troubleshooting
 
 ### Status line not showing
 
-- Run `evs statusline install` (or `--global` to install into `~/.claude/settings.json`).
-- Restart Claude Code (the status line is shown when it is configured in settings).
+- Re-run `evs install --agent claude --statusline` (or add `--global` to use `~/.claude/settings.json`).
+- Restart Claude Code.
 
-### “Cannot determine current Claude session … (ambiguous)”
+### “Missing session …”
 
-Pass an explicit session UUID or a `.jsonl` path:
+Outside the supervisor, pass an explicit session UUID or a `.jsonl` path:
 
 ```bash
-evs open <uuid>
-evs open /full/path/to/session.jsonl
+evs session <uuid>
+evs session /full/path/to/session.jsonl
 ```
 
 ### “Log not found”
 
-EVS logs are created only after EVS writes events (e.g. `evs session-start`, `evs auto-compact ...`).  
-`evs open --log` / `evs log` will not create a log file by themselves.
+EVS logs are created only after EVS writes events (e.g. auto-compact runs).  
+`evs log` will not create a log file by itself.
 
 ## Status
 
