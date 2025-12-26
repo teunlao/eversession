@@ -52,9 +52,7 @@ async function listRolloutCandidates(opts: {
   return out.slice(0, opts.maxCandidates);
 }
 
-async function readCodexSessionMeta(
-  filePath: string,
-): Promise<{ id?: string; cwd?: string; timestampMs?: number }> {
+async function readCodexSessionMeta(filePath: string): Promise<{ id?: string; cwd?: string; timestampMs?: number }> {
   try {
     const { jsonObjects } = await readJsonlHead(filePath, 200);
     for (const obj of jsonObjects) {
@@ -120,17 +118,15 @@ export async function discoverCodexSessionReport(opts: CodexDiscoveryOptions): P
         if (fromState.agent === "codex") {
           const stateMeta = await readCodexSessionMeta(fromState.session.path);
           const mtimeMs = Date.parse(fromState.session.mtime ?? "");
-          const stateMtimeMs =
-            stateMeta.timestampMs ?? (Number.isFinite(mtimeMs) && mtimeMs > 0 ? mtimeMs : 0);
-          const newerId =
-            await findNewerCwdMatchingThreadId({
-              cwd: opts.cwd,
-              codexSessionsDir: opts.codexSessionsDir,
-              lookbackDays: opts.lookbackDays,
-              maxCandidates: opts.maxCandidates,
-              newerThanMs: stateMtimeMs,
-              excludeThreadId: threadId,
-            });
+          const stateMtimeMs = stateMeta.timestampMs ?? (Number.isFinite(mtimeMs) && mtimeMs > 0 ? mtimeMs : 0);
+          const newerId = await findNewerCwdMatchingThreadId({
+            cwd: opts.cwd,
+            codexSessionsDir: opts.codexSessionsDir,
+            lookbackDays: opts.lookbackDays,
+            maxCandidates: opts.maxCandidates,
+            newerThanMs: stateMtimeMs,
+            excludeThreadId: threadId,
+          });
           if (newerId) {
             const fromNewer = await discoverCodexSession({ ...opts, sessionId: newerId });
             if (fromNewer.agent === "codex") {
