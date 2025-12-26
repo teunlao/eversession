@@ -112,4 +112,3 @@ export function parseSupervisorControlCommandLine(line: string): CodexSupervisor
     return undefined;
   }
 }
-

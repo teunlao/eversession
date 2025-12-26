@@ -1,19 +1,24 @@
-import type { Command } from "commander";
-
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import type { Command } from "commander";
 
 import { detectSession } from "../agents/detect.js";
 import { readJsonlHead } from "../agents/session-discovery/shared.js";
 import { fileExists } from "../core/fs.js";
 import { asString, isJsonObject } from "../core/json.js";
 import { deriveSessionIdFromPath, expandHome } from "../core/paths.js";
-import { defaultClaudeProjectsDir } from "../integrations/claude/paths.js";
 import { isUuid } from "../integrations/claude/context.js";
+import { defaultClaudeProjectsDir } from "../integrations/claude/paths.js";
 import { resolveClaudeTranscriptByUuidInProject } from "../integrations/claude/session-discovery.js";
 import { defaultCodexSessionsDir } from "../integrations/codex/paths.js";
 import { discoverCodexSessionReport } from "../integrations/codex/session-discovery.js";
-import { loadPinsFile, resolvePinsPath, savePinsFile, type PinnedAgent, type PinnedSession } from "../integrations/pins/storage.js";
+import {
+  loadPinsFile,
+  type PinnedAgent,
+  type PinnedSession,
+  resolvePinsPath,
+  savePinsFile,
+} from "../integrations/pins/storage.js";
 import { resolveSessionForCli } from "./session-ref.js";
 
 type AgentChoice = "auto" | "claude" | "codex";
@@ -243,7 +248,7 @@ export function registerPinCommand(program: Command): void {
         ...(sessionMtime ? { sessionMtime } : {}),
       };
 
-      let pinsFile;
+      let pinsFile: Awaited<ReturnType<typeof loadPinsFile>>;
       try {
         pinsFile = await loadPinsFile(pinsPath);
       } catch (err) {
@@ -257,7 +262,9 @@ export function registerPinCommand(program: Command): void {
       if (
         existing &&
         !opts.force &&
-        (existing.agent !== record.agent || existing.sessionId !== record.sessionId || existing.sessionPath !== record.sessionPath)
+        (existing.agent !== record.agent ||
+          existing.sessionId !== record.sessionId ||
+          existing.sessionPath !== record.sessionPath)
       ) {
         process.stderr.write(`[evs pin] Pin already exists: ${name} (use --force to overwrite)\n`);
         process.exitCode = 2;

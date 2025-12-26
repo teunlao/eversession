@@ -251,7 +251,7 @@ export function parseEvsConfigStrict(value: unknown): ParseEvsConfigStrictResult
   validateAllowedKeys(value, ROOT_KEYS, "", errors);
 
   if (value.schemaVersion !== 1) {
-    errors.push('Invalid value at schemaVersion (expected number 1).');
+    errors.push("Invalid value at schemaVersion (expected number 1).");
   }
 
   if ("backup" in value) validateOptionalBoolean(value.backup, "backup", errors);

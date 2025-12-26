@@ -3,8 +3,8 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
 import { type DiscoverCodexOptions, discoverCodexSession } from "../../agents/codex/discover.js";
-import type { SessionDiscoveryReport } from "../../agents/session-discovery/types.js";
 import { normalizeCwdCandidates, readJsonlHead } from "../../agents/session-discovery/shared.js";
+import type { SessionDiscoveryReport } from "../../agents/session-discovery/types.js";
 import { asString, isJsonObject } from "../../core/json.js";
 import { resolveCodexStatePath, resolveCodexThreadIdForCwd, updateCodexStateFromNotify } from "./state.js";
 

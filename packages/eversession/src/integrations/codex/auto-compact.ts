@@ -1,12 +1,13 @@
 import * as fs from "node:fs/promises";
 
 import { getTokenizer } from "@anthropic-ai/tokenizer";
+import { buildCompactPrompt, type ModelType } from "../../agents/claude/summary.js";
 import { codexAdapter } from "../../agents/codex/adapter.js";
 import { compactCodexSession, getCodexCompactionParts } from "../../agents/codex/compact.js";
 import type { CodexSession, CodexWrappedLine } from "../../agents/codex/session.js";
 import { getCodexMessageText } from "../../agents/codex/text.js";
 import { planCodexRemovalByTokens } from "../../agents/codex/tokens.js";
-import { type ModelType, buildCompactPrompt } from "../../agents/claude/summary.js";
+import { waitForStableFile } from "../../core/file-stability.js";
 import { writeFileAtomic } from "../../core/fs.js";
 import { countBySeverity, type Issue } from "../../core/issues.js";
 import { asNumber, asString, isJsonObject } from "../../core/json.js";
@@ -14,10 +15,14 @@ import { stringifyJsonl } from "../../core/jsonl.js";
 import { acquireLockWithWait } from "../../core/lock.js";
 import { lockPathForSession } from "../../core/paths.js";
 import { parseCountOrPercent, parseTokensOrPercent, type TokensOrPercent } from "../../core/spec.js";
-import { waitForStableFile } from "../../core/file-stability.js";
 import { appendSessionLog, cleanupOldBackups, createSessionBackup } from "../claude/eversession-session-storage.js";
+import {
+  type CodexPendingCompactSelection,
+  clearCodexPendingCompact,
+  readCodexPendingCompact,
+  writeCodexPendingCompact,
+} from "./pending-compact.js";
 import { appendSupervisorControlCommand, readCodexSupervisorEnv } from "./supervisor-control.js";
-import { type CodexPendingCompactSelection, clearCodexPendingCompact, readCodexPendingCompact, writeCodexPendingCompact } from "./pending-compact.js";
 
 export type CodexAutoCompactResult =
   | "not_triggered"
@@ -64,7 +69,10 @@ function thresholdTokensFromSpec(spec: TokensOrPercent, modelContextWindow: numb
   return Math.floor((modelContextWindow * percent) / 100);
 }
 
-function extractLastCodexTokenCount(session: CodexSession | undefined): { tokens?: number; modelContextWindow?: number } {
+function extractLastCodexTokenCount(session: CodexSession | undefined): {
+  tokens?: number;
+  modelContextWindow?: number;
+} {
   if (!session || session.format !== "wrapped") return {};
 
   for (let i = session.lines.length - 1; i >= 0; i -= 1) {
@@ -190,7 +198,11 @@ async function generateSummaryFromPrompt(prompt: string, model: ModelType): Prom
   return summary.trim();
 }
 
-function selectionFromPlan(session: CodexSession, removeCountHint: number, deletedLines: Set<number>): CodexPendingCompactSelection {
+function selectionFromPlan(
+  session: CodexSession,
+  removeCountHint: number,
+  deletedLines: Set<number>,
+): CodexPendingCompactSelection {
   const wrapped = session.lines.filter((l): l is CodexWrappedLine => l.kind === "wrapped");
   const responseItems = wrapped.filter((l) => l.type === "response_item" && isJsonObject(l.payload));
   const firstKept = responseItems.find((l) => !deletedLines.has(l.line));
@@ -200,7 +212,10 @@ function selectionFromPlan(session: CodexSession, removeCountHint: number, delet
   return selection;
 }
 
-function selectionMatches(pending: CodexPendingCompactSelection, current: CodexPendingCompactSelection | undefined): boolean {
+function selectionMatches(
+  pending: CodexPendingCompactSelection,
+  current: CodexPendingCompactSelection | undefined,
+): boolean {
   if (!current) return false;
   if (pending.removeCount !== current.removeCount) return false;
   if (pending.firstRemovedLine !== undefined && pending.firstRemovedLine !== current.firstRemovedLine) return false;
@@ -314,8 +329,13 @@ export async function runCodexAutoCompactOnce(opts: CodexAutoCompactRunOptions):
     }
 
     const tokenCount = extractLastCodexTokenCount(parsed.session);
-    const thresholdFromSpec = opts.threshold ? thresholdTokensFromSpec(opts.threshold, tokenCount.modelContextWindow) : undefined;
-    const threshold = thresholdFromSpec ?? defaultCodexThresholdFromContextWindow(tokenCount.modelContextWindow) ?? DEFAULT_CODEX_THRESHOLD_TOKENS;
+    const thresholdFromSpec = opts.threshold
+      ? thresholdTokensFromSpec(opts.threshold, tokenCount.modelContextWindow)
+      : undefined;
+    const threshold =
+      thresholdFromSpec ??
+      defaultCodexThresholdFromContextWindow(tokenCount.modelContextWindow) ??
+      DEFAULT_CODEX_THRESHOLD_TOKENS;
 
     let tokens = tokenCount.tokens;
     if (tokens === undefined) {
@@ -334,7 +354,13 @@ export async function runCodexAutoCompactOnce(opts: CodexAutoCompactRunOptions):
       } catch {
         // ignore
       }
-      return { result: "failed", usedModel: opts.model, sessionPath, threshold, error: "[Codex] Cannot estimate tokens." };
+      return {
+        result: "failed",
+        usedModel: opts.model,
+        sessionPath,
+        threshold,
+        error: "[Codex] Cannot estimate tokens.",
+      };
     }
 
     if (tokens < threshold) {
@@ -433,7 +459,8 @@ export async function runCodexAutoCompactOnce(opts: CodexAutoCompactRunOptions):
     try {
       summary = await generateSummaryFromPrompt(prompt, usedModel);
     } catch (err) {
-      const next: ModelType | undefined = usedModel === "haiku" ? "sonnet" : usedModel === "sonnet" ? "opus" : undefined;
+      const next: ModelType | undefined =
+        usedModel === "haiku" ? "sonnet" : usedModel === "sonnet" ? "opus" : undefined;
       if (!next) throw err;
       usedModel = next;
       summary = await generateSummaryFromPrompt(prompt, usedModel);
@@ -500,7 +527,11 @@ export async function runCodexAutoCompactOnce(opts: CodexAutoCompactRunOptions):
     }
 
     // Unsupervised: best-effort apply in-place (caller must restart Codex).
-    const compacted = compactCodexSession(parsed.session, { kind: "count", count: plan.selection.removeCount }, summary);
+    const compacted = compactCodexSession(
+      parsed.session,
+      { kind: "count", count: plan.selection.removeCount },
+      summary,
+    );
     const postParsed = codexAdapter.parseValues(sessionPath, compacted.nextValues);
     const postIssues = [...postParsed.issues, ...(postParsed.ok ? codexAdapter.validate(postParsed.session) : [])];
     const postErrors = countBySeverity(postIssues).error;
@@ -650,12 +681,18 @@ export async function applyCodexPendingCompactOnReload(params: {
     const preErrors = countBySeverity(preIssues).error;
     const tokenCount = extractLastCodexTokenCount(parsed.session);
     const tokensBefore = tokenCount.tokens;
-    const threshold =
-      pending.thresholdTokens ?? defaultCodexThresholdFromContextWindow(tokenCount.modelContextWindow);
+    const threshold = pending.thresholdTokens ?? defaultCodexThresholdFromContextWindow(tokenCount.modelContextWindow);
 
     // Verify selection still matches the current file at the reload boundary.
-    const selectionPlanOp = compactCodexSession(parsed.session, { kind: "count", count: selection.removeCount }, "__EVS_PENDING__");
-    const derived = computeSelectionFromChanges({ session: parsed.session, changes: selectionPlanOp.changes }).selection;
+    const selectionPlanOp = compactCodexSession(
+      parsed.session,
+      { kind: "count", count: selection.removeCount },
+      "__EVS_PENDING__",
+    );
+    const derived = computeSelectionFromChanges({
+      session: parsed.session,
+      changes: selectionPlanOp.changes,
+    }).selection;
     if (!selectionMatches(selection, derived)) {
       try {
         await writeCodexPendingCompact(params.sessionId, {

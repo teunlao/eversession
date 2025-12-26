@@ -9,9 +9,7 @@ import { readCodexSupervisorEnv } from "../integrations/codex/supervisor-control
 export function registerReloadCommand(program: Command): void {
   program
     .command("reload")
-    .description(
-      "Request a reload from the running EVS supervisor (only available inside an evs claude/codex run)",
-    )
+    .description("Request a reload from the running EVS supervisor (only available inside an evs claude/codex run)")
     .action(async () => {
       const claude = readClaudeSupervisorEnv();
       if (claude) {
@@ -32,4 +30,3 @@ export function registerReloadCommand(program: Command): void {
       process.exitCode = 1;
     });
 }
-

@@ -3,10 +3,10 @@ import type { Command } from "commander";
 import { detectSession } from "../agents/detect.js";
 import { type AgentAdapter, getAdapterForDetect } from "../agents/registry.js";
 import { createBackup, writeFileAtomic } from "../core/fs.js";
-import { countBySeverity, type Issue } from "../core/issues.js";
+import type { Issue } from "../core/issues.js";
 import { stringifyJsonl } from "../core/jsonl.js";
-import { parseLineSpec } from "../core/spec.js";
 import { resolveEvsConfigForCwd } from "../core/project-config.js";
+import { parseLineSpec } from "../core/spec.js";
 import { compareErrorCounts, printChangesHuman, printIssuesHuman } from "./common.js";
 import { looksLikeSessionRef, resolveSessionForCli } from "./session-ref.js";
 
@@ -100,15 +100,6 @@ export function registerRemoveCommand(program: Command): void {
         const delta = compareErrorCounts(preIssues, postIssues);
         const worsened = delta.after > delta.before;
         const aborted = worsened && opts.force !== true && opts.dryRun !== true;
-
-        const report = {
-          agent: adapter.id,
-          changes: op.changes,
-          wrote: !opts.dryRun && !aborted,
-          pre: countBySeverity(preIssues),
-          post: countBySeverity(postIssues),
-          aborted,
-        };
 
         printChangesHuman(op.changes, { limit: 50 });
         if (worsened) {

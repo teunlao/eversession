@@ -1,17 +1,16 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
+import { getLogPath, getSessionDir } from "../integrations/claude/eversession-session-storage.js";
+import { resolveCodexConfigPath } from "../integrations/codex/config.js";
+import { discoverCodexSessionReport } from "../integrations/codex/session-discovery.js";
 import { registerCodexCommand } from "./codex.js";
 import { registerInstallCommand } from "./install.js";
 import { registerUninstallCommand } from "./uninstall.js";
-import { discoverCodexSessionReport } from "../integrations/codex/session-discovery.js";
-import { resolveCodexConfigPath } from "../integrations/codex/config.js";
-import { getLogPath, getSessionDir } from "../integrations/claude/eversession-session-storage.js";
 
 async function runCodexCli(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const stdoutChunks: string[] = [];
@@ -378,7 +377,15 @@ describe("cli codex auto-compact", () => {
     );
 
     try {
-      const res = await runCodexCli(["codex", "auto-compact", "run", "--cwd", cwd, "--codex-sessions-dir", codexSessionsDir]);
+      const res = await runCodexCli([
+        "codex",
+        "auto-compact",
+        "run",
+        "--cwd",
+        cwd,
+        "--codex-sessions-dir",
+        codexSessionsDir,
+      ]);
       expect(res.exitCode).toBe(0);
 
       const raw = await readFile(getLogPath(threadId), "utf8");

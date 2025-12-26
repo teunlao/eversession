@@ -1,9 +1,9 @@
 import type { Change, ChangeSet } from "../../core/changes.js";
 import { asString, isJsonObject } from "../../core/json.js";
 import { type CountOrPercent, parseCountOrPercent } from "../../core/spec.js";
+import { buildCompactPrompt, type ModelType } from "../claude/summary.js";
 import type { CompactPrepareParams, CompactPrepareResult } from "../compact.js";
 import type { CodexSession, CodexWrappedLine } from "./session.js";
-import { buildCompactPrompt, type ModelType } from "../claude/summary.js";
 import { getCodexMessageText } from "./text.js";
 
 export type CompactResult = { nextValues: unknown[]; changes: ChangeSet };
@@ -92,7 +92,10 @@ function computeCodexLinesToSummarize(session: CodexSession, removeCount: number
   return new Set([...toRemove].filter((line) => responseLines.has(line)));
 }
 
-export async function prepareCodexCompact(session: CodexSession, params: CompactPrepareParams): Promise<CompactPrepareResult> {
+export async function prepareCodexCompact(
+  session: CodexSession,
+  params: CompactPrepareParams,
+): Promise<CompactPrepareResult> {
   if (params.amountTokensRaw) {
     return {
       ok: false,
@@ -379,7 +382,8 @@ export function getCodexCompactionParts(session: CodexSession): CodexCompactionP
 
   const wrapped = session.lines.filter((l): l is CodexWrappedLine => l.kind === "wrapped");
   const responseItems = wrapped.filter(
-    (l): l is CodexWrappedLine & { payload: Record<string, unknown> } => l.type === "response_item" && isJsonObject(l.payload),
+    (l): l is CodexWrappedLine & { payload: Record<string, unknown> } =>
+      l.type === "response_item" && isJsonObject(l.payload),
   );
   const pinned = findPinnedInitialContext(wrapped);
   const pinnedSet = new Set<number>(pinned.lines);

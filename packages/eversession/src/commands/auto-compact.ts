@@ -118,7 +118,6 @@ export function registerAutoCompactCommand(program: Command): void {
 
         const busyTimeoutMs = parseDurationMs(opts.busyTimeout?.trim() ?? auto?.busyTimeout ?? "10s");
         const notify = opts.notify ?? auto?.notify ?? false;
-        const backup = auto?.backup ?? cfg.config.backup ?? false;
 
         const defaultAmountTokens = "40%";
         const defaultAmountMessages = "25%";
@@ -158,7 +157,10 @@ export function registerAutoCompactCommand(program: Command): void {
         const amountMode: AutoCompactAmountMode =
           amountTokensRaw || (!amountMessagesRaw && !amountArgRaw && !hasKeepLast) ? "tokens" : "messages";
         const amountRaw =
-          amountTokensRaw ?? (amountMode === "tokens" ? defaultAmountTokens : amountMessagesRaw ?? amountArgRaw ?? defaultAmountMessages);
+          amountTokensRaw ??
+          (amountMode === "tokens"
+            ? defaultAmountTokens
+            : (amountMessagesRaw ?? amountArgRaw ?? defaultAmountMessages));
 
         const sessionPath = await resolveClaudeSessionPathForAutoCompact({
           cwd,
@@ -338,7 +340,10 @@ export function registerAutoCompactCommand(program: Command): void {
         const amountMode: AutoCompactAmountMode =
           amountTokensRaw || (!amountMessagesRaw && !amountArgRaw && !hasKeepLast) ? "tokens" : "messages";
         const amountRaw =
-          amountTokensRaw ?? (amountMode === "tokens" ? defaultAmountTokens : amountMessagesRaw ?? amountArgRaw ?? defaultAmountMessages);
+          amountTokensRaw ??
+          (amountMode === "tokens"
+            ? defaultAmountTokens
+            : (amountMessagesRaw ?? amountArgRaw ?? defaultAmountMessages));
 
         const params: AutoCompactRunOptions = {
           cwd,

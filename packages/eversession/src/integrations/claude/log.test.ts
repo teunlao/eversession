@@ -28,4 +28,3 @@ describe("integrations/claude/log", () => {
     expect(line).not.toContain("\n");
   });
 });
-

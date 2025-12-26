@@ -1,9 +1,13 @@
-export { defaultEvsConfig, resolveEvsConfigForCwd, type EvsConfig, type ResolvedEvsConfig } from "./core/project-config.js";
 export {
-  listActiveRunRecordPaths,
-  readActiveRunRecordFile,
-  isPidAlive,
   type EvsActiveRunAgent,
   type EvsActiveRunRecord,
+  isPidAlive,
+  listActiveRunRecordPaths,
+  readActiveRunRecordFile,
 } from "./core/active-run-registry.js";
-
+export {
+  defaultEvsConfig,
+  type EvsConfig,
+  type ResolvedEvsConfig,
+  resolveEvsConfigForCwd,
+} from "./core/project-config.js";

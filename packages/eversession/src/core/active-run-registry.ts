@@ -115,4 +115,3 @@ export function isPidAlive(pid: number): boolean {
     return false;
   }
 }
-

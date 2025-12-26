@@ -14,4 +14,3 @@ export function registerHookEnvCommand(program: Command): void {
       }
     });
 }
-

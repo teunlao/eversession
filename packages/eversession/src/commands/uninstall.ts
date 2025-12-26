@@ -4,7 +4,7 @@ import type { Command } from "commander";
 
 import { fileExists } from "../core/fs.js";
 import { asString, isJsonObject } from "../core/json.js";
-import { resolveClaudeSettingsPath, loadClaudeSettings, saveClaudeSettings } from "../integrations/claude/settings.js";
+import { loadClaudeSettings, resolveClaudeSettingsPath, saveClaudeSettings } from "../integrations/claude/settings.js";
 import { isEvsStatuslineCommand } from "../integrations/claude/statusline.js";
 import {
   EVS_CODEX_NOTIFY_COMMAND,
@@ -137,7 +137,12 @@ export function registerUninstallCommand(program: Command): void {
     .option("--dry-run", "print what would change without writing")
     .action(async (opts: UninstallFlags) => {
       const agentRaw = opts.agent?.trim();
-      const agent = agentRaw === undefined ? undefined : agentRaw === "claude" || agentRaw === "codex" ? (agentRaw satisfies Agent) : undefined;
+      const agent =
+        agentRaw === undefined
+          ? undefined
+          : agentRaw === "claude" || agentRaw === "codex"
+            ? (agentRaw satisfies Agent)
+            : undefined;
       if (agentRaw !== undefined && !agent) {
         process.stderr.write("[evs uninstall] Invalid --agent (expected claude|codex).\n");
         process.exitCode = 2;

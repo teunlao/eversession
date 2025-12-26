@@ -210,12 +210,32 @@ describe("cli pin", () => {
     const pinsPath = join(root, "pins.json");
 
     const p1 = join(root, "a.jsonl");
-    await writeFile(p1, JSON.stringify({ type: "user", uuid: "u1", parentUuid: null, sessionId: "a", timestamp: "2025-12-20T00:00:01Z" }) + "\n", "utf8");
+    await writeFile(
+      p1,
+      JSON.stringify({
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        sessionId: "a",
+        timestamp: "2025-12-20T00:00:01Z",
+      }) + "\n",
+      "utf8",
+    );
     const res1 = await runCli(["pin", "same", p1, "--pins-path", pinsPath]);
     expect(res1.exitCode).toBe(0);
 
     const p2 = join(root, "b.jsonl");
-    await writeFile(p2, JSON.stringify({ type: "user", uuid: "u1", parentUuid: null, sessionId: "b", timestamp: "2025-12-20T00:00:01Z" }) + "\n", "utf8");
+    await writeFile(
+      p2,
+      JSON.stringify({
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        sessionId: "b",
+        timestamp: "2025-12-20T00:00:01Z",
+      }) + "\n",
+      "utf8",
+    );
     const res2 = await runCli(["pin", "same", p2, "--pins-path", pinsPath]);
     expect(res2.exitCode).toBe(2);
     expect(res2.stderr).toContain("Pin already exists");

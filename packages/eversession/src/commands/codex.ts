@@ -1,9 +1,12 @@
 import { spawn } from "node:child_process";
 import type { Command } from "commander";
-
+import type { ModelType } from "../agents/claude/summary.js";
 import { parseDurationMs } from "../core/duration.js";
-import { executeCodexSupervisorCommand } from "../integrations/codex/cli-supervisor.js";
+import { type EvsConfig, resolveEvsConfigForCwd } from "../core/project-config.js";
+import { parseCountOrPercent, parseTokensOrPercent, type TokensOrPercent } from "../core/spec.js";
+import { isClaudeAutoCompactModel } from "../integrations/claude/auto-compact.js";
 import { type CodexAutoCompactAmountMode, runCodexAutoCompactOnce } from "../integrations/codex/auto-compact.js";
+import { executeCodexSupervisorCommand } from "../integrations/codex/cli-supervisor.js";
 import { defaultCodexSessionsDir } from "../integrations/codex/paths.js";
 import { discoverCodexSessionReport } from "../integrations/codex/session-discovery.js";
 import {
@@ -12,11 +15,11 @@ import {
   resolveCodexThreadIdForCwd,
   updateCodexStateFromNotify,
 } from "../integrations/codex/state.js";
-import { readCodexSupervisorEnv, readSupervisorHandshake, writeSupervisorHandshake } from "../integrations/codex/supervisor-control.js";
-import { isClaudeAutoCompactModel } from "../integrations/claude/auto-compact.js";
-import type { ModelType } from "../agents/claude/summary.js";
-import { parseCountOrPercent, parseTokensOrPercent, type TokensOrPercent } from "../core/spec.js";
-import { resolveEvsConfigForCwd, type EvsConfig } from "../core/project-config.js";
+import {
+  readCodexSupervisorEnv,
+  readSupervisorHandshake,
+  writeSupervisorHandshake,
+} from "../integrations/codex/supervisor-control.js";
 
 function parseNotifyArgs(args: string[]): {
   notificationJson?: string;
@@ -172,7 +175,6 @@ function parseNotifyArgs(args: string[]): {
 
     if (!notificationJson) {
       notificationJson = arg;
-      continue;
     }
   }
 
@@ -345,7 +347,9 @@ async function runCodexNotify(args: string[]): Promise<void> {
       const legacyAmountCli = parsedArgs.amount?.trim();
       if (amountTokensCli && (amountMessagesCli || legacyAmountCli)) {
         // Never fail Codex notify hooks because of config errors; just skip auto-compact.
-        process.stderr.write("[evs codex notify] Use either --amount-tokens or --amount-messages/--amount (not both).\n");
+        process.stderr.write(
+          "[evs codex notify] Use either --amount-tokens or --amount-messages/--amount (not both).\n",
+        );
         process.exitCode = 0;
         return;
       }
@@ -576,7 +580,6 @@ function parseAutoCompactArgs(args: string[]): {
     if (arg.startsWith("--codex-sessions-dir=")) {
       const value = arg.slice("--codex-sessions-dir=".length).trim();
       if (value.length > 0) codexSessionsDir = value;
-      continue;
     }
   }
 
@@ -642,7 +645,9 @@ async function runCodexAutoCompact(args: string[]): Promise<void> {
     try {
       threshold = parseTokensOrPercent(thresholdRaw);
     } catch (err) {
-      process.stderr.write(`[evs codex auto-compact] Invalid --threshold: ${err instanceof Error ? err.message : String(err)}\n`);
+      process.stderr.write(
+        `[evs codex auto-compact] Invalid --threshold: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
       process.exitCode = 2;
       return;
     }
@@ -653,7 +658,9 @@ async function runCodexAutoCompact(args: string[]): Promise<void> {
   const amountMessagesRaw = parsed.amountMessages?.trim();
   const legacyAmountRaw = parsed.amount?.trim();
   if (amountTokensRaw && (amountMessagesRaw || legacyAmountRaw)) {
-    process.stderr.write("[evs codex auto-compact] Use either --amount-tokens or --amount-messages/--amount (not both).\n");
+    process.stderr.write(
+      "[evs codex auto-compact] Use either --amount-tokens or --amount-messages/--amount (not both).\n",
+    );
     process.exitCode = 2;
     return;
   }

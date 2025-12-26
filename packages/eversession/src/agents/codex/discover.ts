@@ -259,7 +259,9 @@ export async function discoverCodexSession(opts: DiscoverCodexOptions): Promise<
     ranked.push(item);
   }
 
-  const preferred = ranked.some((r) => r.method !== "fallback") ? ranked.filter((r) => r.method !== "fallback") : ranked;
+  const preferred = ranked.some((r) => r.method !== "fallback")
+    ? ranked.filter((r) => r.method !== "fallback")
+    : ranked;
 
   preferred.sort((a, b) => {
     if (b.lastActivityMs !== a.lastActivityMs) return b.lastActivityMs - a.lastActivityMs;

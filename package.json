@@ -1,12 +1,28 @@
 {
   "name": "eversession-workspace",
   "private": true,
+  "packageManager": "pnpm@10.26.2",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
   "scripts": {
     "build": "pnpm -C packages/eversession build && pnpm -C packages/studio build && node scripts/embed-studio-build.mjs",
     "dev": "pnpm -C packages/eversession dev",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
+    "changeset": "changeset",
+    "version": "changeset version && pnpm install --no-frozen-lockfile",
+    "release": "pnpm build && changeset publish",
     "test": "pnpm -C packages/eversession test",
     "test:watch": "pnpm -C packages/eversession test:watch"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.29.7"
   }
 }

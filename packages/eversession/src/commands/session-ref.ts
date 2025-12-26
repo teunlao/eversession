@@ -3,13 +3,19 @@ import * as path from "node:path";
 import { detectSession } from "../agents/detect.js";
 import { fileExists } from "../core/fs.js";
 import { expandHome } from "../core/paths.js";
-import { defaultClaudeProjectsDir } from "../integrations/claude/paths.js";
 import { isUuid } from "../integrations/claude/context.js";
+import { defaultClaudeProjectsDir } from "../integrations/claude/paths.js";
 import { resolveClaudeTranscriptByUuidInProject } from "../integrations/claude/session-discovery.js";
-import { readClaudeSupervisorEnv, readSupervisorHandshake as readClaudeSupervisorHandshake } from "../integrations/claude/supervisor-control.js";
+import {
+  readClaudeSupervisorEnv,
+  readSupervisorHandshake as readClaudeSupervisorHandshake,
+} from "../integrations/claude/supervisor-control.js";
 import { defaultCodexSessionsDir } from "../integrations/codex/paths.js";
 import { discoverCodexSessionReport } from "../integrations/codex/session-discovery.js";
-import { readCodexSupervisorEnv, readSupervisorHandshake as readCodexSupervisorHandshake } from "../integrations/codex/supervisor-control.js";
+import {
+  readCodexSupervisorEnv,
+  readSupervisorHandshake as readCodexSupervisorHandshake,
+} from "../integrations/codex/supervisor-control.js";
 
 export type ResolvedSession = {
   agent: "claude" | "codex";
@@ -17,7 +23,9 @@ export type ResolvedSession = {
   source: "arg:path" | "arg:id" | "supervisor";
 };
 
-export type ResolveSessionResult = { ok: true; value: ResolvedSession } | { ok: false; error: string; exitCode: number };
+export type ResolveSessionResult =
+  | { ok: true; value: ResolvedSession }
+  | { ok: false; error: string; exitCode: number };
 
 export function isPathLike(value: string): boolean {
   const trimmed = value.trim();
@@ -57,7 +65,11 @@ export async function resolveSessionForCli(params: {
     if (isPathLike(refRaw)) {
       const resolvedPath = path.resolve(expandHome(refRaw));
       if (!(await fileExists(resolvedPath))) {
-        return { ok: false, exitCode: 2, error: `[evs ${params.commandLabel}] Session file not found: ${resolvedPath}` };
+        return {
+          ok: false,
+          exitCode: 2,
+          error: `[evs ${params.commandLabel}] Session file not found: ${resolvedPath}`,
+        };
       }
       const detected = await detectSession(resolvedPath);
       if (detected.agent !== "claude" && detected.agent !== "codex") {
@@ -188,4 +200,3 @@ export async function resolveSessionForCli(params: {
     error: `[evs ${params.commandLabel}] Missing session. Run under \`evs claude\` / \`evs codex\`, or pass a session id/path.`,
   };
 }
-

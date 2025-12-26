@@ -3,7 +3,7 @@ import type { Command } from "commander";
 import { detectSession } from "../agents/detect.js";
 import { type AgentAdapter, getAdapterForDetect } from "../agents/registry.js";
 import { createBackup, writeFileAtomic } from "../core/fs.js";
-import { countBySeverity, type Issue } from "../core/issues.js";
+import type { Issue } from "../core/issues.js";
 import { readTextFile, stringifyJsonl } from "../core/jsonl.js";
 import { resolveEvsConfigForCwd } from "../core/project-config.js";
 import { compareErrorCounts, printChangesHuman, printIssuesHuman } from "./common.js";
@@ -115,7 +115,11 @@ export function registerCompactCommand(program: Command): void {
         const defaultAmountTokens = agent === "claude" ? auto?.amountTokens?.trim() : undefined;
         const effectiveAmountTokens =
           amountTokensRaw ??
-          (amountMessagesRaw || amountArg ? undefined : defaultAmountTokens && defaultAmountTokens.length > 0 ? defaultAmountTokens : undefined);
+          (amountMessagesRaw || amountArg
+            ? undefined
+            : defaultAmountTokens && defaultAmountTokens.length > 0
+              ? defaultAmountTokens
+              : undefined);
 
         const adapter = getAdapterForDetect(detected) as AgentAdapter<unknown> | undefined;
         if (!adapter) {
@@ -195,15 +199,6 @@ export function registerCompactCommand(program: Command): void {
         const delta = compareErrorCounts(preIssues, postIssues);
         const worsened = delta.after > delta.before;
         const aborted = worsened && opts.force !== true && opts.dryRun !== true;
-
-        const report = {
-          agent: adapter.id,
-          changes: combinedChanges,
-          wrote: !opts.dryRun && !aborted,
-          pre: countBySeverity(preIssues),
-          post: countBySeverity(postIssues),
-          aborted,
-        };
 
         printChangesHuman(combinedChanges, { limit: 50 });
         if (worsened) {

@@ -4,7 +4,11 @@ import { claudeAdapter } from "../../agents/claude/adapter.js";
 import { getChainEntries, getChainMessages, getEntryType, getUuid } from "../../agents/claude/model.js";
 import { expandToPreserveToolPairs } from "../../agents/claude/remove-utils.js";
 import type { ClaudeEntryLine } from "../../agents/claude/session.js";
-import { fitClaudeEntriesToMaxPromptTokens, generateClaudeSummary, type ModelType } from "../../agents/claude/summary.js";
+import {
+  fitClaudeEntriesToMaxPromptTokens,
+  generateClaudeSummary,
+  type ModelType,
+} from "../../agents/claude/summary.js";
 import { countClaudeMessagesTokens, planClaudeRemovalByTokens } from "../../agents/claude/tokens.js";
 import { expandToFullAssistantTurns } from "../../agents/claude/turns.js";
 import { waitForStableFile } from "../../core/file-stability.js";

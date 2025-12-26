@@ -1,8 +1,6 @@
 import type { Command } from "commander";
 
-import {
-  runClaudeStatuslineCommand,
-} from "../integrations/claude/statusline-command.js";
+import { runClaudeStatuslineCommand } from "../integrations/claude/statusline-command.js";
 
 export function registerStatuslineCommand(program: Command): void {
   program

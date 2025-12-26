@@ -3,10 +3,10 @@ import { Command } from "commander";
 import { registerAnalyzeCommand } from "./commands/analyze.js";
 import { registerAutoCompactCommand } from "./commands/auto-compact.js";
 import { registerClaudeSupervisorCommand } from "./commands/claude.js";
+import { registerCleanupCommand } from "./commands/cleanup.js";
+import { registerCodexCommand } from "./commands/codex.js";
 import { registerCompactCommand } from "./commands/compact.js";
 import { registerConfigCommand } from "./commands/config.js";
-import { registerCodexCommand } from "./commands/codex.js";
-import { registerCleanupCommand } from "./commands/cleanup.js";
 import { registerForkCommand } from "./commands/fork.js";
 import { registerHookEnvCommand } from "./commands/hook-env.js";
 import { registerInfoCommand } from "./commands/info.js";
@@ -45,7 +45,10 @@ installEpipeHandlers();
 const program = new Command();
 program.enablePositionalOptions();
 program.passThroughOptions();
-program.name("evs").description("EverSession (supervisor-first auto-compaction for Claude Code + Codex)").version("0.1.0");
+program
+  .name("evs")
+  .description("EverSession (supervisor-first auto-compaction for Claude Code + Codex)")
+  .version("0.1.0");
 
 // Public CLI
 registerClaudeSupervisorCommand(program);

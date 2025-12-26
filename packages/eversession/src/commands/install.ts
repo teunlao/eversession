@@ -3,16 +3,16 @@ import * as fs from "node:fs/promises";
 import type { Command } from "commander";
 
 import { fileExists } from "../core/fs.js";
+import { asString, isJsonObject } from "../core/json.js";
 import {
   defaultEvsConfig,
-  evsGlobalConfigPath,
   type EvsConfig,
+  evsGlobalConfigPath,
   parseEvsConfigStrict,
   resolveEvsConfigForCwd,
   writeEvsConfig,
 } from "../core/project-config.js";
-import { asString, isJsonObject } from "../core/json.js";
-import { resolveClaudeSettingsPath, loadClaudeSettings, saveClaudeSettings } from "../integrations/claude/settings.js";
+import { loadClaudeSettings, resolveClaudeSettingsPath, saveClaudeSettings } from "../integrations/claude/settings.js";
 import { isEvsStatuslineCommand } from "../integrations/claude/statusline.js";
 import {
   EVS_CODEX_NOTIFY_COMMAND,
@@ -59,9 +59,7 @@ type ExitCodeError = Error & { exitCode: number };
 
 function isExitCodeError(error: unknown): error is ExitCodeError {
   return (
-    error instanceof Error &&
-    "exitCode" in error &&
-    typeof (error as { exitCode?: unknown }).exitCode === "number"
+    error instanceof Error && "exitCode" in error && typeof (error as { exitCode?: unknown }).exitCode === "number"
   );
 }
 
@@ -205,29 +203,14 @@ function installClaudeHook(settings: ClaudeSettings, def: HookDefinition): { cha
   return { changed: true, note: "Installed" };
 }
 
-function uninstallClaudeHook(settings: ClaudeSettings, def: HookDefinition): boolean {
-  if (!settings.hooks) return false;
-  const eventHooks = settings.hooks[def.event];
-  if (!eventHooks) return false;
-
-  let changed = false;
-  for (const matcher of eventHooks) {
-    const beforeLen = matcher.hooks.length;
-    matcher.hooks = matcher.hooks.filter((h) => h.command.trim() !== def.baseCommand);
-    if (matcher.hooks.length !== beforeLen) changed = true;
-  }
-  settings.hooks[def.event] = eventHooks.filter((m) => m.hooks.length > 0);
-  if (settings.hooks[def.event]!.length === 0) delete settings.hooks[def.event];
-  if (Object.keys(settings.hooks).length === 0) delete settings.hooks;
-  return changed;
-}
-
-async function ensureGlobalEvsConfigFile(params: { dryRun: boolean }): Promise<{ kind: "noop" | "created" | "updated"; path: string }> {
+async function ensureGlobalEvsConfigFile(params: {
+  dryRun: boolean;
+}): Promise<{ kind: "noop" | "created" | "updated"; path: string }> {
   const configPath = evsGlobalConfigPath();
   const exists = await fileExists(configPath);
 
   const existing = await readEvsConfigFileStrict(configPath);
-  const next = (deepMerge(defaultEvsConfig(), existing ?? {}) as EvsConfig) satisfies EvsConfig;
+  const next = deepMerge(defaultEvsConfig(), existing ?? {}) as EvsConfig satisfies EvsConfig;
   const nextText = JSON.stringify(next, null, 2) + "\n";
   const currentText = exists ? await fs.readFile(configPath, "utf8") : undefined;
 
@@ -238,7 +221,10 @@ async function ensureGlobalEvsConfigFile(params: { dryRun: boolean }): Promise<{
   return { kind: exists ? "updated" : "created", path: configPath };
 }
 
-async function ensureLocalEvsConfigFile(params: { dryRun: boolean; cwd: string }): Promise<{ kind: "noop" | "created" | "updated"; path: string }> {
+async function ensureLocalEvsConfigFile(params: {
+  dryRun: boolean;
+  cwd: string;
+}): Promise<{ kind: "noop" | "created" | "updated"; path: string }> {
   const resolved = await resolveEvsConfigForCwd(params.cwd);
   const configPath = resolved.files.local.path;
   const exists = await fileExists(configPath);
@@ -254,7 +240,12 @@ async function ensureLocalEvsConfigFile(params: { dryRun: boolean; cwd: string }
   return { kind: exists ? "updated" : "created", path: configPath };
 }
 
-async function installClaude(params: { global: boolean; dryRun: boolean; force: boolean; components: Set<string> }): Promise<void> {
+async function installClaude(params: {
+  global: boolean;
+  dryRun: boolean;
+  force: boolean;
+  components: Set<string>;
+}): Promise<void> {
   const settingsPath = resolveClaudeSettingsPath({ global: params.global, cwd: process.cwd() });
   const settings = (await loadClaudeSettings(settingsPath)) as ClaudeSettings;
 
@@ -398,7 +389,8 @@ export function registerInstallCommand(program: Command): void {
         const msg = error instanceof Error ? error.message : "Unknown error";
         process.stderr.write(`[evs install] Error: ${msg}\n`);
         const isConfigError =
-          typeof msg === "string" && (msg.startsWith("Invalid EVS config:") || msg.startsWith("Invalid JSON in EVS config:"));
+          typeof msg === "string" &&
+          (msg.startsWith("Invalid EVS config:") || msg.startsWith("Invalid JSON in EVS config:"));
         process.exitCode = isExitCodeError(error) ? error.exitCode : isConfigError ? 2 : 1;
       }
     });

@@ -35,4 +35,3 @@ describe("agents/codex/tokens planCodexRemovalByTokens", () => {
     expect(plan.selectedRemoveTokens).toBe(20);
   });
 });
-

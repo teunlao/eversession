@@ -1,5 +1,5 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -35,7 +35,11 @@ describe("codex session discovery", () => {
         JSON.stringify({
           timestamp: tsOld,
           type: "event_msg",
-          payload: { type: "token_count", info: { last_token_usage: { total_tokens: 10 }, model_context_window: 100 }, rate_limits: null },
+          payload: {
+            type: "token_count",
+            info: { last_token_usage: { total_tokens: 10 }, model_context_window: 100 },
+            rate_limits: null,
+          },
         }),
       ].join("\n") + "\n",
       "utf8",
@@ -48,7 +52,11 @@ describe("codex session discovery", () => {
         JSON.stringify({
           timestamp: tsNew,
           type: "event_msg",
-          payload: { type: "token_count", info: { last_token_usage: { total_tokens: 20 }, model_context_window: 100 }, rate_limits: null },
+          payload: {
+            type: "token_count",
+            info: { last_token_usage: { total_tokens: 20 }, model_context_window: 100 },
+            rate_limits: null,
+          },
         }),
       ].join("\n") + "\n",
       "utf8",

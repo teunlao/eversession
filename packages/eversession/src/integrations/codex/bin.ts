@@ -34,4 +34,3 @@ export function defaultCodexBin(): string {
   if (envBin && envBin.length > 0) return envBin;
   return "codex";
 }
-

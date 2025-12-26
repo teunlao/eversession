@@ -37,7 +37,11 @@ describe("codex discover", () => {
         JSON.stringify({
           timestamp: tsOlder,
           type: "event_msg",
-          payload: { type: "token_count", info: { last_token_usage: { total_tokens: 1 }, model_context_window: 10 }, rate_limits: null },
+          payload: {
+            type: "token_count",
+            info: { last_token_usage: { total_tokens: 1 }, model_context_window: 10 },
+            rate_limits: null,
+          },
         }),
       ].join("\n") + "\n",
       "utf8",
@@ -54,7 +58,11 @@ describe("codex discover", () => {
         JSON.stringify({
           timestamp: tsNewer,
           type: "event_msg",
-          payload: { type: "token_count", info: { last_token_usage: { total_tokens: 999 }, model_context_window: 1000 }, rate_limits: null },
+          payload: {
+            type: "token_count",
+            info: { last_token_usage: { total_tokens: 999 }, model_context_window: 1000 },
+            rate_limits: null,
+          },
         }),
       ].join("\n") + "\n",
       "utf8",
@@ -77,4 +85,3 @@ describe("codex discover", () => {
     expect(res.confidence).toBe("high");
   });
 });
-

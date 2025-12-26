@@ -126,7 +126,11 @@ describe("cli fork", () => {
       srcPath,
       [
         JSON.stringify({ timestamp: ts, type: "session_meta", payload: { id: oldId, timestamp: ts, cwd } }),
-        JSON.stringify({ timestamp: ts, type: "response_item", payload: { type: "message", role: "user", content: [] } }),
+        JSON.stringify({
+          timestamp: ts,
+          type: "response_item",
+          payload: { type: "message", role: "user", content: [] },
+        }),
       ].join("\n") + "\n",
       "utf8",
     );
@@ -152,10 +156,16 @@ describe("cli fork", () => {
 
     const dstPath = join(dayDir, `rollout-2025-01-01T00-00-00-${newId}.jsonl`);
     const text = await readFile(dstPath, "utf8");
-    const lines = text.trim().split("\n").map((l) => JSON.parse(l) as Record<string, unknown>);
+    const lines = text
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l) as Record<string, unknown>);
     const meta = lines.find((l) => l.type === "session_meta") as Record<string, unknown> | undefined;
     expect(meta).toBeDefined();
-    const payload = meta && typeof meta.payload === "object" && meta.payload !== null ? (meta.payload as Record<string, unknown>) : undefined;
+    const payload =
+      meta && typeof meta.payload === "object" && meta.payload !== null
+        ? (meta.payload as Record<string, unknown>)
+        : undefined;
     expect(payload?.id).toBe(newId);
   });
 
@@ -179,7 +189,11 @@ describe("cli fork", () => {
       srcPath,
       [
         JSON.stringify({ timestamp: ts, type: "session_meta", payload: { id: oldId, timestamp: ts, cwd } }),
-        JSON.stringify({ timestamp: ts, type: "response_item", payload: { type: "message", role: "user", content: [] } }),
+        JSON.stringify({
+          timestamp: ts,
+          type: "response_item",
+          payload: { type: "message", role: "user", content: [] },
+        }),
       ].join("\n") + "\n",
       "utf8",
     );
@@ -205,10 +219,16 @@ describe("cli fork", () => {
 
     const dstPath = join(dayDir, `rollout-2025-01-01T00-00-00-${newId}.jsonl`);
     const text = await readFile(dstPath, "utf8");
-    const lines = text.trim().split("\n").map((l) => JSON.parse(l) as Record<string, unknown>);
+    const lines = text
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l) as Record<string, unknown>);
     const meta = lines.find((l) => l.type === "session_meta") as Record<string, unknown> | undefined;
     expect(meta).toBeDefined();
-    const payload = meta && typeof meta.payload === "object" && meta.payload !== null ? (meta.payload as Record<string, unknown>) : undefined;
+    const payload =
+      meta && typeof meta.payload === "object" && meta.payload !== null
+        ? (meta.payload as Record<string, unknown>)
+        : undefined;
     expect(payload?.id).toBe(newId);
   });
 });

@@ -40,4 +40,3 @@ export async function runReloadCommand(params: { agent: AgentChoice; sessionIdAr
 
   await runClaudeReloadCommand(params.sessionIdArg);
 }
-

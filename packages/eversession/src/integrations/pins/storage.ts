@@ -103,4 +103,3 @@ export async function savePinsFile(pinsPath: string, pins: PinnedSession[]): Pro
 
   await writeFileAtomic(pinsPath, JSON.stringify(file, null, 2));
 }
-

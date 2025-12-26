@@ -1,5 +1,5 @@
-import * as os from "node:os";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import * as os from "node:os";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 

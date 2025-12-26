@@ -37,7 +37,7 @@ function stripInlineTomlComment(line: string): string {
         escapeNext = true;
         continue;
       }
-      if (ch === "\"") {
+      if (ch === '"') {
         inDouble = false;
         continue;
       }
@@ -49,7 +49,7 @@ function stripInlineTomlComment(line: string): string {
       continue;
     }
 
-    if (ch === "\"") {
+    if (ch === '"') {
       inDouble = true;
       continue;
     }
@@ -88,7 +88,7 @@ function parseTomlStringArray(value: string): string[] | undefined {
     }
   };
 
-  const readQuoted = (quote: "\"" | "'"): string | undefined => {
+  const readQuoted = (quote: '"' | "'"): string | undefined => {
     const startQuote = inner[i];
     if (startQuote !== quote) return undefined;
     i += 1;
@@ -100,7 +100,7 @@ function parseTomlStringArray(value: string): string[] | undefined {
       const ch = inner[i] ?? "";
       i += 1;
 
-      if (quote === "\"") {
+      if (quote === '"') {
         if (escapeNext) {
           buf += ch;
           escapeNext = false;
@@ -110,7 +110,7 @@ function parseTomlStringArray(value: string): string[] | undefined {
           escapeNext = true;
           continue;
         }
-        if (ch === "\"") return buf;
+        if (ch === '"') return buf;
         buf += ch;
         continue;
       }
@@ -126,8 +126,8 @@ function parseTomlStringArray(value: string): string[] | undefined {
   skipWhitespaceAndCommas();
   while (i < len) {
     const ch = inner[i] ?? "";
-    if (ch === "\"") {
-      const value = readQuoted("\"");
+    if (ch === '"') {
+      const value = readQuoted('"');
       if (value === undefined) return undefined;
       out.push(value);
       skipWhitespaceAndCommas();
@@ -243,7 +243,10 @@ export function editCodexConfigTomlInstallNotify(params: {
   return { kind: "changed", content };
 }
 
-export function editCodexConfigTomlUninstallNotify(params: { toml: string; command?: readonly string[] }): NotifyEditResult {
+export function editCodexConfigTomlUninstallNotify(params: {
+  toml: string;
+  command?: readonly string[];
+}): NotifyEditResult {
   const command = params.command ?? EVS_CODEX_NOTIFY_COMMAND;
   const lines = splitTomlLines(params.toml);
   const matches = findNotifyLines(lines);
@@ -271,7 +274,10 @@ export function editCodexConfigTomlUninstallNotify(params: { toml: string; comma
   return { kind: "changed", content };
 }
 
-export async function installCodexNotify(params: { force?: boolean; env?: NodeJS.ProcessEnv }): Promise<{ changed: boolean; configPath: string }> {
+export async function installCodexNotify(params: {
+  force?: boolean;
+  env?: NodeJS.ProcessEnv;
+}): Promise<{ changed: boolean; configPath: string }> {
   const env = params.env ?? process.env;
   const configPath = resolveCodexConfigPath(env);
   const exists = await fileExists(configPath);
@@ -285,7 +291,9 @@ export async function installCodexNotify(params: { force?: boolean; env?: NodeJS
   return { changed: true, configPath };
 }
 
-export async function uninstallCodexNotify(params: { env?: NodeJS.ProcessEnv }): Promise<{ changed: boolean; configPath: string }> {
+export async function uninstallCodexNotify(params: {
+  env?: NodeJS.ProcessEnv;
+}): Promise<{ changed: boolean; configPath: string }> {
   const env = params.env ?? process.env;
   const configPath = resolveCodexConfigPath(env);
   const exists = await fileExists(configPath);

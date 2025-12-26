@@ -40,4 +40,3 @@ export async function runCodexReloadCommand(sessionIdArg?: string): Promise<void
   process.stdout.write("Manual reload:\nCtrl+C, then run:\nevs codex resume <session-id>\n");
   process.exitCode = 2;
 }
-

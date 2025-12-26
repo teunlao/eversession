@@ -30,17 +30,11 @@ function getToolResultTokenSegments(content: unknown): string[] {
       const text = asString(p.text);
       if (!text) continue;
       segments.push(ensureTrailingNewline(text));
-      continue;
-    }
-
-    if (type === "image") {
+    } else if (type === "image") {
       // Claude Code `/context → Messages` token usage does not scale with base64 payload size.
       // Represent images as a tiny placeholder to avoid runaway counts.
       segments.push("[image]\n");
-      continue;
-    }
-
-    if (type === "json") {
+    } else if (type === "json") {
       if ("json" in p) {
         try {
           segments.push(JSON.stringify(p.json) + "\n");
@@ -48,7 +42,6 @@ function getToolResultTokenSegments(content: unknown): string[] {
           // ignore
         }
       }
-      continue;
     }
   }
 
@@ -79,11 +72,8 @@ function getToolUseResultTokenSegments(toolUseResult: unknown): string[] {
         const text = asString(p.text);
         if (!text) continue;
         segments.push(ensureTrailingNewline(text));
-        continue;
-      }
-      if (type === "image") {
+      } else if (type === "image") {
         segments.push("[image]\n");
-        continue;
       }
     }
     return segments;
@@ -101,10 +91,7 @@ function getToolUseResultTokenSegments(toolUseResult: unknown): string[] {
     const stdout = asString(obj.stdout);
     const stderr = asString(obj.stderr);
     if (stdout || stderr) {
-      return [
-        ...(stdout ? [ensureTrailingNewline(stdout)] : []),
-        ...(stderr ? [ensureTrailingNewline(stderr)] : []),
-      ];
+      return [...(stdout ? [ensureTrailingNewline(stdout)] : []), ...(stderr ? [ensureTrailingNewline(stderr)] : [])];
     }
 
     const file = obj.file;
@@ -191,7 +178,6 @@ function countTokensForClaudeMessage(entry: ClaudeEntryLine, tokenizer: Tokenize
       for (const segment of getToolResultTokenSegments(b.content)) {
         tokens += countTokensWithTokenizer(tokenizer, segment);
       }
-      continue;
     }
   }
 

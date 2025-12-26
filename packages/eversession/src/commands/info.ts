@@ -31,4 +31,3 @@ export function registerInfoCommand(program: Command): void {
       }
     });
 }
-

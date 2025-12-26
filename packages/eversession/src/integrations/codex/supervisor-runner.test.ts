@@ -107,4 +107,3 @@ describe("integrations/codex/supervisor-runner", () => {
     expect(records[2]?.args).toEqual(["resume", "thread-1"]);
   });
 });
-

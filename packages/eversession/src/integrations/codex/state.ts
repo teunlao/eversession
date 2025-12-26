@@ -2,9 +2,9 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
 import { normalizeCwdCandidates } from "../../agents/session-discovery/shared.js";
+import { BRAND } from "../../core/brand.js";
 import { fileExists, writeFileAtomic } from "../../core/fs.js";
 import { asString, isJsonObject } from "../../core/json.js";
-import { BRAND } from "../../core/brand.js";
 import { claudeEversessionBaseDir } from "../claude/paths.js";
 
 export type CodexNotifyEvent = {
@@ -96,7 +96,10 @@ export async function saveCodexState(statePath: string, state: CodexStateV1): Pr
   await writeFileAtomic(statePath, JSON.stringify(next, null, 2));
 }
 
-export async function updateCodexStateFromNotify(params: { statePath: string; event: CodexNotifyEvent }): Promise<void> {
+export async function updateCodexStateFromNotify(params: {
+  statePath: string;
+  event: CodexNotifyEvent;
+}): Promise<void> {
   const state = await loadCodexState(params.statePath);
 
   const now = new Date().toISOString();

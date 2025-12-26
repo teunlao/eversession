@@ -1,24 +1,29 @@
-import type { Command } from "commander";
-
 import * as crypto from "node:crypto";
 import * as path from "node:path";
+import type { Command } from "commander";
 
 import { detectSession } from "../agents/detect.js";
 import { fileExists, writeFileAtomic } from "../core/fs.js";
 import { asString, isJsonObject } from "../core/json.js";
-import { loadJsonlFile, type JsonlLine } from "../core/jsonl.js";
+import { type JsonlLine, loadJsonlFile } from "../core/jsonl.js";
 import { expandHome } from "../core/paths.js";
-import { discoverCodexSessionReport } from "../integrations/codex/session-discovery.js";
-import { defaultCodexSessionsDir } from "../integrations/codex/paths.js";
-import { resolveClaudeTranscriptByUuidInProject } from "../integrations/claude/session-discovery.js";
 import { isUuid } from "../integrations/claude/context.js";
 import { defaultClaudeProjectsDir } from "../integrations/claude/paths.js";
+import { resolveClaudeTranscriptByUuidInProject } from "../integrations/claude/session-discovery.js";
+import { defaultCodexSessionsDir } from "../integrations/codex/paths.js";
+import { discoverCodexSessionReport } from "../integrations/codex/session-discovery.js";
 
 type AgentChoice = "auto" | "claude" | "codex";
 
 function isPathLike(value: string): boolean {
   const trimmed = value.trim();
-  return trimmed.includes("/") || trimmed.includes("\\") || trimmed.endsWith(".jsonl") || trimmed.startsWith("~") || trimmed.startsWith(".");
+  return (
+    trimmed.includes("/") ||
+    trimmed.includes("\\") ||
+    trimmed.endsWith(".jsonl") ||
+    trimmed.startsWith("~") ||
+    trimmed.startsWith(".")
+  );
 }
 
 function findCodexConversationId(lines: JsonlLine[], format: "wrapped" | "legacy"): string | undefined {
@@ -216,7 +221,8 @@ export function registerForkCommand(program: Command): void {
           : defaultCodexSessionsDir();
       const lookbackDaysRaw = typeof opts.lookbackDays === "string" ? opts.lookbackDays : "14";
       const lookbackDaysParsed = Number(lookbackDaysRaw);
-      const lookbackDays = Number.isFinite(lookbackDaysParsed) && lookbackDaysParsed > 0 ? Math.floor(lookbackDaysParsed) : 14;
+      const lookbackDays =
+        Number.isFinite(lookbackDaysParsed) && lookbackDaysParsed > 0 ? Math.floor(lookbackDaysParsed) : 14;
 
       const resolved = await resolveSessionPathForFork({
         agent,
@@ -243,9 +249,7 @@ export function registerForkCommand(program: Command): void {
       // Retry on collisions (very unlikely).
       let newId = crypto.randomUUID();
       for (let i = 0; i < 5; i += 1) {
-        const target = detected.agent === "claude"
-          ? path.join(path.dirname(sourcePath), `${newId}.jsonl`)
-          : undefined;
+        const target = detected.agent === "claude" ? path.join(path.dirname(sourcePath), `${newId}.jsonl`) : undefined;
         if (!target) break;
         if (!(await fileExists(target))) break;
         newId = crypto.randomUUID();

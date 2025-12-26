@@ -198,7 +198,10 @@ export function formatEntriesForPrompt(entries: ClaudeEntryLine[]): string {
   return lines.join("\n\n");
 }
 
-export function buildClaudeSummaryPrompt(entriesToCompact: ClaudeEntryLine[], options: SummaryOptions = {}): SummaryPrompt {
+export function buildClaudeSummaryPrompt(
+  entriesToCompact: ClaudeEntryLine[],
+  options: SummaryOptions = {},
+): SummaryPrompt {
   const targetPercent = options.targetPercent ?? 20;
 
   const formattedMessages = formatEntriesForPrompt(entriesToCompact);

@@ -1,5 +1,5 @@
-import * as path from "node:path";
 import * as fs from "node:fs/promises";
+import * as path from "node:path";
 
 import type { Command } from "commander";
 
@@ -107,4 +107,3 @@ export function registerLogCommand(program: Command): void {
       process.exitCode = 0;
     });
 }
-

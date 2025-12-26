@@ -53,8 +53,10 @@ function parseSelection(value: unknown): CodexPendingCompactSelection | undefine
 
   const out: CodexPendingCompactSelection = { removeCount };
 
-  if (firstRemovedLine !== undefined && Number.isFinite(firstRemovedLine) && firstRemovedLine > 0) out.firstRemovedLine = firstRemovedLine;
-  if (lastRemovedLine !== undefined && Number.isFinite(lastRemovedLine) && lastRemovedLine > 0) out.lastRemovedLine = lastRemovedLine;
+  if (firstRemovedLine !== undefined && Number.isFinite(firstRemovedLine) && firstRemovedLine > 0)
+    out.firstRemovedLine = firstRemovedLine;
+  if (lastRemovedLine !== undefined && Number.isFinite(lastRemovedLine) && lastRemovedLine > 0)
+    out.lastRemovedLine = lastRemovedLine;
   if (anchorLine !== undefined && Number.isFinite(anchorLine) && anchorLine > 0) out.anchorLine = anchorLine;
 
   return out;

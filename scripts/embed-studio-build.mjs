@@ -17,4 +17,3 @@ try {
 await rm(dst, { recursive: true, force: true });
 await cp(src, dst, { recursive: true });
 process.stdout.write(`[embed-studio] Copied ${src} -> ${dst}\n`);
-

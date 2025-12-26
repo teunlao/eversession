@@ -291,13 +291,13 @@ export async function runClaudeStatuslineCommand(opts: StatuslineOptions): Promi
         if (keepLastRaw !== undefined && keepLastRaw.trim().length > 0 && !hasAmountTokens) {
           args.push("--amount-messages", amountMessages ?? defaultAmountMessages);
           args.push("--keep-last", keepLastRaw);
-	        } else if (amountTokens) {
-	          args.push("--amount-tokens", amountTokens);
-	        } else if (amountMessages) {
-	          args.push("--amount-messages", amountMessages);
-	        } else {
-	          args.push("--amount-tokens", defaultAmountTokens);
-	        }
+        } else if (amountTokens) {
+          args.push("--amount-tokens", amountTokens);
+        } else if (amountMessages) {
+          args.push("--amount-messages", amountMessages);
+        } else {
+          args.push("--amount-tokens", defaultAmountTokens);
+        }
 
         spawnDetached(args);
       }

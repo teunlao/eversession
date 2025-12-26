@@ -1,17 +1,14 @@
 import * as fs from "node:fs/promises";
-import * as os from "node:os";
 import * as path from "node:path";
 
 import type { Command } from "commander";
 
 import {
-  activeRunRecordPath,
   evsActiveRunsDir,
   isEvsControlDirForAgent,
   isPidAlive,
   listActiveRunRecordPaths,
   readActiveRunRecordFile,
-  type EvsActiveRunAgent,
 } from "../core/active-run-registry.js";
 import { fileExists } from "../core/fs.js";
 
@@ -23,10 +20,6 @@ type CleanupFlags = {
 type CleanupAction =
   | { kind: "remove_active_record"; path: string; reason: string }
   | { kind: "remove_control_dir"; path: string; reason: string };
-
-function tmpBaseDirForAgent(agent: EvsActiveRunAgent): string {
-  return path.join(os.tmpdir(), agent === "claude" ? "evs-claude" : "evs-codex");
-}
 
 async function safeRmDir(dirPath: string): Promise<void> {
   await fs.rm(dirPath, { recursive: true, force: true });
@@ -44,7 +37,6 @@ async function cleanupPlan(): Promise<CleanupAction[]> {
   const actions: CleanupAction[] = [];
 
   const recordPaths = await listActiveRunRecordPaths();
-  const recordPathSet = new Set(recordPaths.map((p) => path.resolve(p)));
 
   for (const recordPath of recordPaths) {
     const record = await readActiveRunRecordFile(recordPath);
@@ -60,30 +52,6 @@ async function cleanupPlan(): Promise<CleanupAction[]> {
     const controlDir = record.controlDir;
     if (isEvsControlDirForAgent(controlDir, record.agent) && (await fileExists(controlDir))) {
       actions.push({ kind: "remove_control_dir", path: controlDir, reason: "pid_not_alive" });
-    }
-  }
-
-  // Conservative: only remove tmp control dirs when we have high confidence they belong to EVS runs.
-  // We currently only treat dirs with a corresponding active record as candidates.
-  for (const agent of ["claude", "codex"] as const satisfies EvsActiveRunAgent[]) {
-    const base = tmpBaseDirForAgent(agent);
-    if (!(await fileExists(base))) continue;
-    let entries: string[];
-    try {
-      entries = await fs.readdir(base);
-    } catch {
-      continue;
-    }
-
-    for (const name of entries) {
-      const controlDir = path.join(base, name);
-      // Only consider directories that match an active record filename; everything else we leave alone.
-      const expectedRecord = path.resolve(activeRunRecordPath(agent, name));
-      if (!recordPathSet.has(expectedRecord)) continue;
-      // Deletion is handled above when the record is stale.
-      // If the record is alive, we keep the directory.
-      // If the record is stale, it will be removed by the record-based branch.
-      // (No-op here to avoid double-reporting.)
     }
   }
 
@@ -159,4 +127,3 @@ export function registerCleanupCommand(program: Command): void {
       process.exitCode = 0;
     });
 }
-

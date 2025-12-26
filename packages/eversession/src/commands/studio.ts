@@ -1,7 +1,7 @@
+import { spawn } from "node:child_process";
 import * as http from "node:http";
 import * as path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { spawn } from "node:child_process";
 
 import type { Command } from "commander";
 

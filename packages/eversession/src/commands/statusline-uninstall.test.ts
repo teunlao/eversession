@@ -7,7 +7,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import { registerUninstallCommand } from "./uninstall.js";
 
-async function runUninstall(args: string[], cwd: string): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+async function runUninstall(
+  args: string[],
+  cwd: string,
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const stdoutChunks: string[] = [];
   const stderrChunks: string[] = [];
   const spyOut = vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {

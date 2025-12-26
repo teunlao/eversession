@@ -38,4 +38,3 @@ export function planCodexRemovalByTokens(params: {
     ...(params.keepLastItems !== undefined ? { keepLastMessages: params.keepLastItems } : {}),
   });
 }
-

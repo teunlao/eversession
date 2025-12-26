@@ -3,6 +3,10 @@ import * as fs from "node:fs/promises";
 
 import { BRAND } from "../../core/brand.js";
 import { fileExists } from "../../core/fs.js";
+import { applyCodexPendingCompactOnReload } from "./auto-compact.js";
+import { defaultCodexSessionsDir } from "./paths.js";
+import { readCodexPendingCompact } from "./pending-compact.js";
+import { discoverCodexSessionReport } from "./session-discovery.js";
 import {
   type CodexSupervisorControlCommand,
   controlLogPathForControlDir,
@@ -10,10 +14,6 @@ import {
   type ReloadMode,
   readSupervisorHandshake,
 } from "./supervisor-control.js";
-import { applyCodexPendingCompactOnReload } from "./auto-compact.js";
-import { readCodexPendingCompact } from "./pending-compact.js";
-import { defaultCodexSessionsDir } from "./paths.js";
-import { discoverCodexSessionReport } from "./session-discovery.js";
 
 export type CodexSupervisorProcess = {
   exitCode: number;
