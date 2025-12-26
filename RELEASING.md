@@ -22,4 +22,3 @@ pnpm changeset
 ## Snapshot releases (manual)
 
 Use GitHub Actions → **Release Snapshot** to publish a `snapshot`/`alpha`/`beta` tag from any branch.
-
