@@ -1,6 +1,6 @@
 {
   "name": "eversession",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Progressive session compaction for endless Claude Code + Codex sessions.",
   "type": "module",
   "license": "MIT",
