@@ -41,7 +41,8 @@ describe("cli cleanup", () => {
   const prevEnv = { EVS_CONFIG_PATH: process.env.EVS_CONFIG_PATH };
 
   afterEach(() => {
-    process.env.EVS_CONFIG_PATH = prevEnv.EVS_CONFIG_PATH;
+    if (prevEnv.EVS_CONFIG_PATH === undefined) delete process.env.EVS_CONFIG_PATH;
+    else process.env.EVS_CONFIG_PATH = prevEnv.EVS_CONFIG_PATH;
   });
 
   it("dry-run reports stale active record and does not delete", async () => {

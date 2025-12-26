@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { page } from "$app/stores";
+  import { page } from "$app/state";
   import { Button } from "$lib/components/ui/button";
   import { Input } from "$lib/components/ui/input";
   import { cn } from "$lib/utils.js";
@@ -33,7 +33,7 @@
             size="sm"
             class={cn(
               "h-8 px-3",
-              $page.url.pathname === s.href && "bg-accent text-accent-foreground"
+              page.url.pathname === s.href && "bg-accent text-accent-foreground"
             )}
           >
             {s.label}

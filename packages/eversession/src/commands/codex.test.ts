@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -29,6 +30,8 @@ async function runCodexCli(args: string[]): Promise<{ stdout: string; stderr: st
 
   try {
     const program = new Command();
+    program.enablePositionalOptions();
+    program.passThroughOptions();
     program.exitOverride();
     registerCodexCommand(program);
     await program.parseAsync(["node", "evs", ...args]);
@@ -209,8 +212,11 @@ describe("cli install/uninstall (codex notify)", () => {
 
   afterEach(() => {
     vi.useRealTimers();
-    process.env.CODEX_HOME = prevEnv.CODEX_HOME;
-    process.env.EVS_CONFIG_PATH = prevEnv.EVS_CONFIG_PATH;
+    if (prevEnv.CODEX_HOME === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = prevEnv.CODEX_HOME;
+
+    if (prevEnv.EVS_CONFIG_PATH === undefined) delete process.env.EVS_CONFIG_PATH;
+    else process.env.EVS_CONFIG_PATH = prevEnv.EVS_CONFIG_PATH;
   });
 
   it("installs Codex notify into an empty config.toml", async () => {
@@ -319,9 +325,14 @@ describe("cli codex auto-compact", () => {
   };
 
   afterEach(() => {
-    process.env.EVS_CODEX_CONTROL_DIR = prevEnv.EVS_CODEX_CONTROL_DIR;
-    process.env.EVS_CODEX_RUN_ID = prevEnv.EVS_CODEX_RUN_ID;
-    process.env.EVS_CODEX_RELOAD_MODE = prevEnv.EVS_CODEX_RELOAD_MODE;
+    if (prevEnv.EVS_CODEX_CONTROL_DIR === undefined) delete process.env.EVS_CODEX_CONTROL_DIR;
+    else process.env.EVS_CODEX_CONTROL_DIR = prevEnv.EVS_CODEX_CONTROL_DIR;
+
+    if (prevEnv.EVS_CODEX_RUN_ID === undefined) delete process.env.EVS_CODEX_RUN_ID;
+    else process.env.EVS_CODEX_RUN_ID = prevEnv.EVS_CODEX_RUN_ID;
+
+    if (prevEnv.EVS_CODEX_RELOAD_MODE === undefined) delete process.env.EVS_CODEX_RELOAD_MODE;
+    else process.env.EVS_CODEX_RELOAD_MODE = prevEnv.EVS_CODEX_RELOAD_MODE;
   });
 
   it("infers session id + defaults from supervisor/config when omitted", async () => {
@@ -347,7 +358,7 @@ describe("cli codex auto-compact", () => {
     );
 
     const codexSessionsDir = join(root, "codex-sessions");
-    const threadId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    const threadId = randomUUID();
     await writeCodexSession({
       codexSessionsDir,
       dateDir: { yyyy: "2025", mm: "12", dd: "20" },

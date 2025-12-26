@@ -48,10 +48,17 @@ describe("cli auto-compact", () => {
   };
 
   afterEach(() => {
-    process.env.EVS_CLAUDE_CONTROL_DIR = prevEnv.EVS_CLAUDE_CONTROL_DIR;
-    process.env.EVS_CLAUDE_RUN_ID = prevEnv.EVS_CLAUDE_RUN_ID;
-    process.env.EVS_CLAUDE_RELOAD_MODE = prevEnv.EVS_CLAUDE_RELOAD_MODE;
-    process.env.EVS_CONFIG_PATH = prevEnv.EVS_CONFIG_PATH;
+    if (prevEnv.EVS_CLAUDE_CONTROL_DIR === undefined) delete process.env.EVS_CLAUDE_CONTROL_DIR;
+    else process.env.EVS_CLAUDE_CONTROL_DIR = prevEnv.EVS_CLAUDE_CONTROL_DIR;
+
+    if (prevEnv.EVS_CLAUDE_RUN_ID === undefined) delete process.env.EVS_CLAUDE_RUN_ID;
+    else process.env.EVS_CLAUDE_RUN_ID = prevEnv.EVS_CLAUDE_RUN_ID;
+
+    if (prevEnv.EVS_CLAUDE_RELOAD_MODE === undefined) delete process.env.EVS_CLAUDE_RELOAD_MODE;
+    else process.env.EVS_CLAUDE_RELOAD_MODE = prevEnv.EVS_CLAUDE_RELOAD_MODE;
+
+    if (prevEnv.EVS_CONFIG_PATH === undefined) delete process.env.EVS_CONFIG_PATH;
+    else process.env.EVS_CONFIG_PATH = prevEnv.EVS_CONFIG_PATH;
   });
 
   it("infers session path from supervisor handshake and defaults from .evs/config.json", async () => {

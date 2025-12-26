@@ -1,4 +1,5 @@
 import * as fs from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,7 +14,7 @@ describe("integrations/codex/auto-compact", () => {
     const cwd = join(base, "proj");
     await fs.mkdir(cwd, { recursive: true });
 
-    const sessionId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    const sessionId = randomUUID();
     const sessionPath = join(base, `rollout-2025-01-01T00-00-00-${sessionId}.jsonl`);
     const ts = "2025-01-01T00:00:00Z";
     await writeFile(

@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -22,8 +23,8 @@ describe("codex session discovery", () => {
     const dayDir = join(codexSessionsDir, yyyy, mm, dd);
     await mkdir(dayDir, { recursive: true });
 
-    const oldId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
-    const newId = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+    const oldId = randomUUID();
+    const newId = randomUUID();
     const tsOld = "2025-01-01T00:00:00Z";
     const tsNew = "2025-01-01T00:10:00Z";
 

@@ -14,6 +14,7 @@ import { registerInstallCommand } from "./commands/install.js";
 import { registerLintCommand } from "./commands/lint.js";
 import { registerLogCommand } from "./commands/log.js";
 import { registerPinCommand } from "./commands/pin.js";
+import { registerReloadCommand } from "./commands/reload.js";
 import { registerRemoveCommand } from "./commands/remove.js";
 import { registerSessionCommand } from "./commands/session.js";
 import { registerSessionStartCommand } from "./commands/session-start.js";
@@ -62,6 +63,7 @@ registerCleanupCommand(program);
 registerStudioCommand(program);
 registerForkCommand(program);
 registerPinCommand(program);
+registerReloadCommand(program);
 
 // Internal (hidden) commands used by hooks/statusline/supervisors
 registerAutoCompactCommand(program);

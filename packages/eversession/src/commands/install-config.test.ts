@@ -45,7 +45,8 @@ describe("cli install (evs config defaults)", () => {
   const prevEnv = { EVS_CONFIG_PATH: process.env.EVS_CONFIG_PATH };
 
   afterEach(() => {
-    process.env.EVS_CONFIG_PATH = prevEnv.EVS_CONFIG_PATH;
+    if (prevEnv.EVS_CONFIG_PATH === undefined) delete process.env.EVS_CONFIG_PATH;
+    else process.env.EVS_CONFIG_PATH = prevEnv.EVS_CONFIG_PATH;
   });
 
   it("fills defaults into an existing local .evs/config.json", async () => {
@@ -108,4 +109,3 @@ describe("cli install (evs config defaults)", () => {
     expect(raw).toContain('"lol": true');
   });
 });
-
