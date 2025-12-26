@@ -48,7 +48,7 @@ async function listRolloutCandidates(opts: {
     }
   }
 
-  out.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  out.sort((a, b) => b.mtimeMs - a.mtimeMs || b.filePath.localeCompare(a.filePath));
   return out.slice(0, opts.maxCandidates);
 }
 
@@ -88,7 +88,9 @@ async function findNewerCwdMatchingThreadId(opts: {
   });
 
   for (const c of candidates) {
-    if (c.mtimeMs <= opts.newerThanMs) break; // sorted newest first
+    // NOTE: some filesystems have low mtime resolution; allow equals so we can still
+    // discover a different session created within the same timestamp bucket.
+    if (c.mtimeMs < opts.newerThanMs) break; // sorted newest first
     const meta = await readCodexSessionMeta(c.filePath);
     if (!meta.id || meta.id === opts.excludeThreadId) continue;
     if (!meta.cwd || !targetCwds.has(meta.cwd)) continue;
