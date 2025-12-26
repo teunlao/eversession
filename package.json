@@ -23,6 +23,7 @@
     "test:watch": "pnpm -C packages/eversession test:watch"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.3.10",
     "@changesets/cli": "^2.29.7"
   }
 }
