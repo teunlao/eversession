@@ -52,7 +52,9 @@ async function listRolloutCandidates(opts: {
   return out.slice(0, opts.maxCandidates);
 }
 
-async function readCodexSessionMeta(filePath: string): Promise<{ id?: string; cwd?: string }> {
+async function readCodexSessionMeta(
+  filePath: string,
+): Promise<{ id?: string; cwd?: string; timestampMs?: number }> {
   try {
     const { jsonObjects } = await readJsonlHead(filePath, 200);
     for (const obj of jsonObjects) {
@@ -61,9 +63,12 @@ async function readCodexSessionMeta(filePath: string): Promise<{ id?: string; cw
       if (!isJsonObject(payload)) continue;
       const id = asString(payload.id);
       const cwd = asString(payload.cwd);
-      const out: { id?: string; cwd?: string } = {};
+      const timestamp = asString(payload.timestamp);
+      const tsMs = timestamp ? Date.parse(timestamp) : NaN;
+      const out: { id?: string; cwd?: string; timestampMs?: number } = {};
       if (id) out.id = id;
       if (cwd) out.cwd = cwd;
+      if (Number.isFinite(tsMs) && tsMs > 0) out.timestampMs = tsMs;
       return out;
     }
   } catch {
@@ -87,17 +92,22 @@ async function findNewerCwdMatchingThreadId(opts: {
     maxCandidates: opts.maxCandidates,
   });
 
+  const baseMs = Number.isFinite(opts.newerThanMs) ? opts.newerThanMs : 0;
+  let best: { id: string; freshnessMs: number } | undefined;
+
   for (const c of candidates) {
-    // NOTE: some filesystems have low mtime resolution; allow equals so we can still
-    // discover a different session created within the same timestamp bucket.
-    if (c.mtimeMs < opts.newerThanMs) break; // sorted newest first
     const meta = await readCodexSessionMeta(c.filePath);
     if (!meta.id || meta.id === opts.excludeThreadId) continue;
     if (!meta.cwd || !targetCwds.has(meta.cwd)) continue;
-    return meta.id;
+
+    const freshnessMs = meta.timestampMs ?? c.mtimeMs;
+    if (baseMs > 0 && freshnessMs <= baseMs) continue;
+    if (!best || freshnessMs > best.freshnessMs || (freshnessMs === best.freshnessMs && meta.id > best.id)) {
+      best = { id: meta.id, freshnessMs };
+    }
   }
 
-  return undefined;
+  return best?.id;
 }
 
 export async function discoverCodexSessionReport(opts: CodexDiscoveryOptions): Promise<SessionDiscoveryReport> {
@@ -108,18 +118,19 @@ export async function discoverCodexSessionReport(opts: CodexDiscoveryOptions): P
       if (threadId) {
         const fromState = await discoverCodexSession({ ...opts, sessionId: threadId });
         if (fromState.agent === "codex") {
-          const stateMtimeMs = Date.parse(fromState.session.mtime ?? "");
+          const stateMeta = await readCodexSessionMeta(fromState.session.path);
+          const mtimeMs = Date.parse(fromState.session.mtime ?? "");
+          const stateMtimeMs =
+            stateMeta.timestampMs ?? (Number.isFinite(mtimeMs) && mtimeMs > 0 ? mtimeMs : 0);
           const newerId =
-            Number.isFinite(stateMtimeMs) && stateMtimeMs > 0
-              ? await findNewerCwdMatchingThreadId({
-                  cwd: opts.cwd,
-                  codexSessionsDir: opts.codexSessionsDir,
-                  lookbackDays: opts.lookbackDays,
-                  maxCandidates: opts.maxCandidates,
-                  newerThanMs: stateMtimeMs,
-                  excludeThreadId: threadId,
-                })
-              : undefined;
+            await findNewerCwdMatchingThreadId({
+              cwd: opts.cwd,
+              codexSessionsDir: opts.codexSessionsDir,
+              lookbackDays: opts.lookbackDays,
+              maxCandidates: opts.maxCandidates,
+              newerThanMs: stateMtimeMs,
+              excludeThreadId: threadId,
+            });
           if (newerId) {
             const fromNewer = await discoverCodexSession({ ...opts, sessionId: newerId });
             if (fromNewer.agent === "codex") {
