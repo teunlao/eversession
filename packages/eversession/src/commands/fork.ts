@@ -12,6 +12,7 @@ import { defaultClaudeProjectsDir } from "../integrations/claude/paths.js";
 import { resolveClaudeTranscriptByUuidInProject } from "../integrations/claude/session-discovery.js";
 import { defaultCodexSessionsDir } from "../integrations/codex/paths.js";
 import { discoverCodexSessionReport } from "../integrations/codex/session-discovery.js";
+import { resolveSessionForCli } from "./session-ref.js";
 
 type AgentChoice = "auto" | "claude" | "codex";
 
@@ -180,8 +181,16 @@ async function resolveSessionPathForFork(params: {
     return { error: `[evs fork] No session found for id=${idRaw}.`, exitCode: 2 };
   }
 
-  // No id: only Claude “active session” makes sense.
-  return { error: "[evs fork] Missing session. Pass a UUID or a .jsonl path.", exitCode: 2 };
+  // No id: allowed only under an active EVS supervisor.
+  const resolved = await resolveSessionForCli({ commandLabel: "fork", cwd: params.cwd });
+  if (!resolved.ok) return { error: resolved.error, exitCode: resolved.exitCode };
+  if (params.agent !== "auto" && resolved.value.agent !== params.agent) {
+    return {
+      exitCode: 2,
+      error: `[evs fork] Current session is ${resolved.value.agent}. Re-run with an explicit ref, or omit --agent.`,
+    };
+  }
+  return { path: resolved.value.sessionPath, agent: resolved.value.agent };
 }
 
 type ForkCommandOptions = {

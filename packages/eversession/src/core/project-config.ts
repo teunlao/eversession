@@ -55,7 +55,7 @@ export function defaultEvsConfig(): EvsConfig {
       reload: "manual",
       autoCompact: {
         enabled: true,
-        threshold: "140k",
+        threshold: "120k",
         amountTokens: "40%",
         amountMessages: "25%",
         model: "haiku",
@@ -94,11 +94,19 @@ export function evsGlobalConfigPath(): string {
   return path.join(os.homedir(), ".evs", "config.json");
 }
 
+function isSamePath(a: string, b: string): boolean {
+  const aResolved = path.resolve(a);
+  const bResolved = path.resolve(b);
+  if (process.platform === "win32") return aResolved.toLowerCase() === bResolved.toLowerCase();
+  return aResolved === bResolved;
+}
+
 export async function findEvsConfigPath(startDir: string): Promise<string | undefined> {
+  const globalConfigPath = evsGlobalConfigPath();
   let dir = path.resolve(startDir);
   for (let i = 0; i < 50; i += 1) {
     const candidate = evsLocalConfigPathForDir(dir);
-    if (await fileExists(candidate)) return candidate;
+    if (!isSamePath(candidate, globalConfigPath) && (await fileExists(candidate))) return candidate;
     const parent = path.dirname(dir);
     if (parent === dir) break;
     dir = parent;

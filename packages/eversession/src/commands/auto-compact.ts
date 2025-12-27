@@ -61,7 +61,7 @@ export function registerAutoCompactCommand(program: Command): void {
     .description("Start auto-compact in the background (intended for Claude hooks)")
     .option("--cwd <path>", "working directory to resolve session (default: process.cwd())")
     .option("--session <path>", "Claude session JSONL path (overrides --cwd resolution)")
-    .option("--threshold <n>", "token threshold (e.g. 140k)")
+    .option("--threshold <n>", "token threshold (e.g. 120k)")
     .option("--amount <n|%>", "amount to compact by messages (default: 25%)")
     .option("--amount-messages <n|%>", "amount to compact by messages (alias for --amount)")
     .option("--amount-tokens <n|%|k>", "amount to compact by tokens (default: 40%; e.g. 40% or 30k)")
@@ -105,7 +105,7 @@ export function registerAutoCompactCommand(program: Command): void {
             ? parseTokenThreshold(opts.threshold)
             : auto?.threshold
               ? parseTokenThreshold(auto.threshold)
-              : parseTokenThreshold("140k");
+              : parseTokenThreshold("120k");
 
         const maxPromptTokens = opts.maxTokens
           ? parseTokenThreshold(opts.maxTokens)
@@ -244,7 +244,7 @@ export function registerAutoCompactCommand(program: Command): void {
     .description("Run auto-compact synchronously (worker)")
     .option("--cwd <path>", "working directory to resolve session (default: process.cwd())")
     .option("--session <path>", "Claude session JSONL path (overrides --cwd resolution)")
-    .option("--threshold <n>", "token threshold (e.g. 140k)")
+    .option("--threshold <n>", "token threshold (e.g. 120k)")
     .option("--amount <n|%>", "amount to compact by messages (default: 25%)")
     .option("--amount-messages <n|%>", "amount to compact by messages (alias for --amount)")
     .option("--amount-tokens <n|%|k>", "amount to compact by tokens (default: 40%; e.g. 40% or 30k)")
@@ -287,7 +287,7 @@ export function registerAutoCompactCommand(program: Command): void {
             ? parseTokenThreshold(opts.threshold)
             : auto?.threshold
               ? parseTokenThreshold(auto.threshold)
-              : parseTokenThreshold("140k");
+              : parseTokenThreshold("120k");
 
         const maxPromptTokens = opts.maxTokens
           ? parseTokenThreshold(opts.maxTokens)

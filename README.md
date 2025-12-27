@@ -142,7 +142,7 @@ Minimal example:
     "reload": "manual",
     "autoCompact": {
       "enabled": true,
-      "threshold": "140k",
+      "threshold": "120k",
       "amountTokens": "40%",
       "amountMessages": "25%",
       "model": "haiku",
