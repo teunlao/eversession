@@ -1,5 +1,11 @@
 # eversession
 
+## 0.1.3
+
+### Patch Changes
+
+- 12cf6cf: Restore public `evs status` progress output for Claude Code + Codex sessions (codex).
+
 ## 0.1.2
 
 ### Patch Changes
